@@ -42,6 +42,27 @@ The scan runs entirely on recorded fixtures: 11 synthetic Critical findings
 collapse to **1 actionable ticket** (the edge gateway) with 10 dismissals,
 each logged with its falsification reason.
 
+## Dual-surface UI (offline judge mode — zero credentials, zero network)
+
+```bash
+python -m nullpoint.report --offline        # writes nullpoint-report.html
+# then open nullpoint-report.html in any browser (or: python3 -m http.server)
+```
+
+A single self-contained HTML file (inline CSS + vanilla JS, no external
+assets, no server, no extra dependencies) with the two product surfaces:
+
+1. **Investigation trace** — pick any finding: the model's proposed exploit
+   preconditions, the solver's hop-by-hop reachability trace, and the final
+   verdict (ACTIONABLE / DISMISSED / NEEDS REVIEW).
+2. **Action queue vs dismissal log** — reachable findings ranked by
+   weaponization intel, next to every dismissed alert expandable to its
+   falsification trace and tamper-evident log entry.
+
+The report opens on the refusal moment: the Log4j-style Critical on the
+internal analytics cluster is refused (Zero Exposure) while the single
+genuinely exposed edge gateway becomes the one ticket.
+
 ## Live mode (requires keys)
 
 ```bash
@@ -67,6 +88,9 @@ nullpoint/
   dismissal_log.py  append-only hash-chained JSONL dismissal log
   scanner.py        pipeline: propose -> prove -> decide
   cli.py            demo CLI (`scan` command)
+  report.py         dual-surface UI generator (`python -m nullpoint.report --offline`)
+  _report_template.html
+                    self-contained HTML shell (inline CSS/JS, zero external assets)
 fixtures/
   infra.json        synthetic AWS infra (internal cluster + edge gateway)
   cves.json         11 synthetic Critical findings
@@ -77,8 +101,9 @@ HYPOTHESES.md       falsifiable hypotheses + status
 
 ## Roadmap
 
-- Phase 2: live Nebius/Tavily runs, dual-surface UI (investigation trace +
-  action queue), ≤3-min demo video, Devpost submission.
+- Dual-surface UI: done (`python -m nullpoint.report --offline`).
+- Remaining: live Nebius/Tavily runs (needs API keys — human step), ≤3-min
+  demo video, Devpost submission.
 - See `HYPOTHESES.md` for what is proven offline vs deferred to live runs.
 
 ## License

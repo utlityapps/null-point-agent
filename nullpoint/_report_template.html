@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NullPoint Agent — Falsify Exploitability</title>
+<style>
+:root{
+  --bg:#0b0e14; --panel:#121724; --panel2:#0f1420; --border:#263049;
+  --text:#dbe2ee; --muted:#8b94a9; --red:#f05555; --green:#3fb950;
+  --amber:#d29922; --blue:#58a6ff; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;line-height:1.55}
+.wrap{max-width:1120px;margin:0 auto;padding:24px 20px 60px}
+header.top{border-bottom:1px solid var(--border);padding-bottom:18px;margin-bottom:24px}
+.brand{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.brand .dot{width:14px;height:14px;border-radius:50%;background:var(--red);
+  box-shadow:0 0 12px var(--red)}
+h1{font-size:26px;margin:0}
+.tag{font-size:12px;color:var(--muted);border:1px solid var(--border);border-radius:20px;
+  padding:3px 12px;background:var(--panel2)}
+.thesis{font-size:17px;color:var(--text);margin:14px 0 4px}
+.thesis em{color:var(--red);font-style:normal;font-weight:600}
+.pipeline{display:flex;gap:0;margin:18px 0;flex-wrap:wrap}
+.pipe{flex:1;min-width:200px;background:var(--panel);border:1px solid var(--border);
+  border-radius:10px;padding:12px 14px}
+.pipe + .pipe{margin-left:10px}
+.pipe .k{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.pipe .v{font-weight:600;margin-top:4px}
+.pipe .d{font-size:13px;color:var(--muted)}
+.arrow{align-self:center;color:var(--muted);font-size:22px;padding:0 6px}
+section{margin:30px 0}
+h2{font-size:19px;margin:0 0 4px}
+.sub{color:var(--muted);font-size:14px;margin:0 0 14px}
+/* refusal moment */
+.refusal{border:1px solid var(--border);border-radius:14px;overflow:hidden}
+.refusal .head{background:linear-gradient(90deg,#3a1414,#141a2e);padding:14px 18px;
+  font-weight:700;letter-spacing:.04em;font-size:14px;text-transform:uppercase}
+.refusal .cols{display:grid;grid-template-columns:1fr 44px 1fr}
+@media(max-width:760px){.refusal .cols{grid-template-columns:1fr}}
+.before,.after{padding:18px}
+.before{background:#1a1114}.after{background:#0f1a14}
+.before h3,.after h3{margin:0 0 10px;font-size:15px}
+.before h3{color:var(--red)}.after h3{color:var(--green)}
+.mid{display:flex;align-items:center;justify-content:center;font-size:30px;color:var(--muted)}
+@media(max-width:760px){.mid{padding:6px 0;transform:rotate(90deg)}}
+.alert{background:#241318;border:1px solid #5a2b2b;border-left:4px solid var(--red);
+  border-radius:8px;padding:8px 12px;margin:6px 0;font-size:13px}
+.alert code{font-family:var(--mono);color:#ffb4b4}
+.dismiss{background:#12241a;border:1px solid #2b5a3a;border-left:4px solid var(--green);
+  border-radius:8px;padding:10px 12px;margin:8px 0;font-size:13px}
+.dismiss code{font-family:var(--mono);color:#a9e5bb}
+.bigstat{display:flex;gap:14px;align-items:baseline;margin-top:14px;flex-wrap:wrap}
+.bigstat .n{font-size:40px;font-weight:800}
+.bigstat .n.red{color:var(--red)}.bigstat .n.green{color:var(--green)}
+/* stats */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.stat{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px 14px}
+.stat .n{font-size:26px;font-weight:700}
+.stat .l{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+/* tabs */
+.tabs{display:flex;gap:8px;margin:26px 0 0;border-bottom:1px solid var(--border)}
+.tabbtn{background:none;border:none;color:var(--muted);font-size:15px;font-weight:600;
+  padding:10px 16px;cursor:pointer;border-bottom:3px solid transparent}
+.tabbtn.active{color:var(--text);border-bottom-color:var(--blue)}
+.pane{display:none;padding-top:18px}.pane.active{display:block}
+/* trace surface */
+select.finding{background:var(--panel);color:var(--text);border:1px solid var(--border);
+  border-radius:8px;padding:8px 12px;font-size:14px;max-width:100%}
+.panels{display:grid;grid-template-columns:1fr;gap:14px;margin-top:14px}
+@media(min-width:900px){.panels{grid-template-columns:1fr 1.4fr}}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:16px}
+.card h3{margin:0 0 10px;font-size:14px;text-transform:uppercase;letter-spacing:.06em}
+.card.proposes h3{color:var(--blue)}.card.proves h3{color:var(--amber)}.card.decides h3{color:var(--green)}
+.kv{display:grid;grid-template-columns:170px 1fr;gap:6px 10px;font-size:13px}
+.kv dt{color:var(--muted)}.kv dd{margin:0;font-family:var(--mono);word-break:break-word}
+.pathblock{border:1px solid var(--border);border-radius:10px;margin:10px 0;overflow:hidden}
+.pathblock .proute{background:var(--panel2);padding:8px 12px;font-family:var(--mono);
+  font-size:12.5px;border-bottom:1px solid var(--border)}
+.pathblock .proute .ok{color:var(--green);font-weight:700}
+.pathblock .proute .no{color:var(--red);font-weight:700}
+.hop{display:grid;grid-template-columns:86px 1fr;gap:10px;padding:8px 12px;font-size:13px;
+  border-bottom:1px solid var(--border)}
+.hop:last-child{border-bottom:none}
+.hop .dec{font-weight:700;font-size:12px;text-transform:uppercase}
+.hop .dec.allow{color:var(--green)}.hop .dec.deny{color:var(--red)}
+.hop .why{font-family:var(--mono);font-size:12.5px;color:var(--muted)}
+.verdict{border-radius:12px;padding:14px 16px;margin-top:14px;border:1px solid var(--border)}
+.verdict.actionable{background:#241318;border-color:#5a2b2b}
+.verdict.dismissed{background:#12241a;border-color:#2b5a3a}
+.verdict.needs-review{background:#241d10;border-color:#5a4a2b}
+.verdict .lab{font-size:18px;font-weight:800;letter-spacing:.03em}
+.verdict.actionable .lab{color:var(--red)}
+.verdict.dismissed .lab{color:var(--green)}
+.verdict.needs-review .lab{color:var(--amber)}
+.verdict p{margin:8px 0 0;font-size:14px}
+.badges{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.pill{font-size:12px;border:1px solid var(--border);border-radius:20px;padding:2px 10px;color:var(--muted)}
+.pill.hot{color:#ffb4b4;border-color:#5a2b2b}
+/* queue surface */
+.qcols{display:grid;grid-template-columns:1fr;gap:16px}
+@media(min-width:900px){.qcols{grid-template-columns:1fr 1.4fr}}
+.qitem{background:var(--panel);border:1px solid var(--border);border-left:4px solid var(--red);
+  border-radius:10px;padding:12px 14px;margin:10px 0}
+.qitem .t{font-weight:700}
+.qitem .m{font-size:13px;color:var(--muted);font-family:var(--mono)}
+details.dism{background:var(--panel);border:1px solid var(--border);border-radius:10px;
+  margin:8px 0;padding:0}
+details.dism summary{cursor:pointer;padding:10px 14px;font-size:13.5px;list-style:none}
+details.dism summary::-webkit-details-marker{display:none}
+details.dism summary:hover{background:var(--panel2)}
+details.dism .body{padding:0 14px 14px;font-size:13px}
+details.dism .body .mono{font-family:var(--mono);font-size:12px;color:var(--muted);
+  word-break:break-all}
+.guardnote{font-size:12.5px;color:var(--muted);margin-top:6px}
+.chainok{color:var(--green);font-weight:600}
+footer{border-top:1px solid var(--border);margin-top:40px;padding-top:16px;
+  color:var(--muted);font-size:13px}
+footer code{font-family:var(--mono)}
+a{color:var(--blue)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+  <div class="brand">
+    <span class="dot"></span>
+    <h1>NullPoint Agent</h1>
+    <span class="tag" id="modeTag">offline judge mode</span>
+  </div>
+  <p class="thesis">More security alerts do not lower risk &mdash; they <em>obscure</em> it.
+  NullPoint falsifies exploitability against network telemetry and
+  <em>refuses</em> to flag CVEs with zero reachable execution path.</p>
+  <div class="pipeline">
+    <div class="pipe"><div class="k">Model proposes</div><div class="v">NVIDIA Nemotron</div>
+      <div class="d">via Nebius Token Factory &mdash; extracts exploit preconditions from CVE advisories</div></div>
+    <div class="arrow">&rarr;</div>
+    <div class="pipe"><div class="k">Code proves</div><div class="v">Deterministic graph engine</div>
+      <div class="d">NetworkX reachability over SG / NACL / ALB / Route53 &mdash; boolean, no LLM votes</div></div>
+    <div class="arrow">&rarr;</div>
+    <div class="pipe"><div class="k">Product decides</div><div class="v">NullPoint Control</div>
+      <div class="d">ranked action queue vs tamper-evident dismissal log</div></div>
+  </div>
+</header>
+
+<main>
+<section class="refusal">
+  <div class="head">&#128308; The refusal moment &mdash; live from this scan</div>
+  <div class="cols">
+    <div class="before">
+      <h3>BEFORE &mdash; generic AI scanner</h3>
+      <div id="beforeAlerts"></div>
+      <p style="color:var(--muted);font-size:13px;margin-bottom:0">
+        Recommended action: patch everything, now. 120-instance fire drill.</p>
+    </div>
+    <div class="mid">&rarr;</div>
+    <div class="after">
+      <h3>AFTER &mdash; NullPoint agent</h3>
+      <div id="afterVerdicts"></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Scan summary</h2>
+  <p class="sub">Deterministic verdicts for every finding &mdash; no alert passes without a proven execution path.</p>
+  <div class="stats" id="statsBar"></div>
+</section>
+
+<nav class="tabs">
+  <button class="tabbtn active" data-pane="pane-trace">Investigation trace</button>
+  <button class="tabbtn" data-pane="pane-queue">Action queue &amp; dismissal log</button>
+</nav>
+
+<section class="pane active" id="pane-trace">
+  <h2>Investigation trace</h2>
+  <p class="sub">Select a finding: the model proposes exploit preconditions, the solver proves
+  reachability hop-by-hop, the product decides. Numbers never pass through the LLM.</p>
+  <label style="font-size:13px;color:var(--muted)">Finding&nbsp;
+    <select class="finding" id="findingSelect"></select></label>
+  <div id="traceView"></div>
+</section>
+
+<section class="pane" id="pane-queue">
+  <h2>Action queue vs dismissal log</h2>
+  <p class="sub">Reachable findings, ranked by weaponization intel &mdash; against every
+  falsified alert with its dismissal proof.</p>
+  <div class="qcols">
+    <div>
+      <h3 style="font-size:14px;color:var(--red)">&#9679; Action queue <span id="qCount"></span></h3>
+      <div id="queueList"></div>
+    </div>
+    <div>
+      <h3 style="font-size:14px;color:var(--green)">&#9679; Dismissed proof log <span id="dCount"></span></h3>
+      <div id="dismissList"></div>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <p><strong>Evidence, not vibes.</strong>
+  Hypotheses: H1 (majority of Criticals unreachable) <span class="chainok">supported offline</span>;
+  H2 (solver matches hand review) <span class="chainok">supported offline</span>;
+  H4 (&ge;10x alert reduction) <span class="chainok">supported offline</span>;
+  H3 (Nemotron extraction accuracy) deferred to a live Nebius run &mdash; see <code>HYPOTHESES.md</code>.</p>
+  <p>Honest limits: the hash-chained dismissal log detects edits, reordering and
+  non-tail deletion, but not tail truncation (anchor the latest hash externally in production);
+  NACL stateless return paths use the realistic egress-allow-all default. Full notes in the repo.</p>
+  <p style="margin-bottom:0">NullPoint Agent &mdash; Nebius x NVIDIA Global AI Hackathon &middot; Apache-2.0 &middot;
+  generated fully offline from recorded fixtures.</p>
+</footer>
+
+</div>
+<script>
+const DATA = __NULLPOINT_DATA__;
+</script>
+<script>
+function esc(s){
+  if (s === null || s === undefined) return "";
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+function verdictLabel(d){
+  return d === "actionable" ? "ACTIONABLE"
+    : d === "dismissed" ? "DISMISSED \u2014 Zero Exposure"
+    : "NEEDS HUMAN REVIEW";
+}
+function boolTxt(b){ return b ? "yes" : "no"; }
+function intelPills(x){
+  let h = "";
+  if (x.kev_listed) h += '<span class="pill hot">CISA KEV listed</span>';
+  if (x.weaponized) h += '<span class="pill hot">weaponized in the wild</span>';
+  if (x.epss !== null && x.epss !== undefined)
+    h += '<span class="pill">EPSS ' + esc(x.epss) + '</span>';
+  return h || '<span class="pill">no weaponization intel</span>';
+}
+
+function renderRefusal(){
+  const byId = {};
+  DATA.verdicts.forEach(v => byId[v.finding_id] = v);
+  // BEFORE: what a generic scanner dumps on the team.
+  let bh = "";
+  DATA.verdicts.forEach(v => {
+    bh += '<div class="alert"><code>[CRITICAL]</code> ' + esc(v.cve_id) +
+      ' on <code>' + esc(v.host) + ':' + esc(v.port) + '</code> &mdash; patch immediately.</div>';
+  });
+  document.getElementById("beforeAlerts").innerHTML = bh;
+  // AFTER: the refusal moment, anchored on F-001 (Log4j-style, internal cluster).
+  const f = byId["F-001"] || DATA.verdicts.find(v => v.decision === "dismissed");
+  const q = DATA.actionable.map(id => byId[id]).filter(Boolean);
+  let ah = "";
+  if (f){
+    ah += '<div class="dismiss"><strong>REFUSED:</strong> <code>' + esc(f.cve_id) +
+      '</code> on <code>' + esc(f.host) + ':' + esc(f.port) + '</code><br>' +
+      esc(f.reason) + '<br><strong>Decision: ' + verdictLabel(f.decision) +
+      '.</strong> No ticket filed. No page. No fire drill.</div>';
+  }
+  q.forEach(v => {
+    ah += '<div class="alert"><strong>1 real ticket:</strong> <code>' + esc(v.finding_id) +
+      '</code> ' + esc(v.cve_id) + ' on <code>' + esc(v.host) + ':' + esc(v.port) +
+      '</code> &mdash; ' + esc(v.reason.split(";")[0]) + '</div>';
+  });
+  ah += '<div class="bigstat"><span class="n red">' + DATA.raw_alert_count +
+    '</span><span style="color:var(--muted)">raw Critical alerts collapse to</span>' +
+    '<span class="n green">' + q.length + '</span>' +
+    '<span style="color:var(--muted)">actionable (' +
+    (DATA.raw_alert_count / Math.max(q.length,1)).toFixed(0) + 'x reduction)</span></div>';
+  document.getElementById("afterVerdicts").innerHTML = ah;
+}
+
+function renderStats(){
+  const g = DATA.guard;
+  const items = [
+    [DATA.raw_alert_count, "raw critical alerts"],
+    [DATA.actionable.length, "actionable"],
+    [DATA.dismissed.length, "dismissed (zero exposure)"],
+    [DATA.needs_review.length, "needs human review"],
+    [g.total + " / " + g.blocked, "guard checks / blocked"],
+  ];
+  document.getElementById("statsBar").innerHTML = items.map(i =>
+    '<div class="stat"><div class="n">' + esc(i[0]) + '</div><div class="l">' + esc(i[1]) + '</div></div>'
+  ).join("") +
+  '<div class="stat"><div class="n" style="font-size:15px;padding-top:6px">' +
+    (DATA.chain.ok ? '<span class="chainok">\u2713 valid</span>' : '<span style="color:var(--red)">INVALID</span>') +
+    '</div><div class="l">tamper-evident dismissal log</div></div>';
+  document.getElementById("modeTag").textContent = DATA.mode.split("\u2014")[0].trim();
+}
+
+function hopHtml(h){
+  const dec = h.decision === "allow" ? "allow" : "deny";
+  const hop = h.hop ? esc(h.hop) : "<em>no candidate path</em>";
+  return '<div class="hop"><span class="dec ' + dec + '">' + dec + '</span>' +
+    '<span><div>' + hop + '</div><div class="why">' + esc(h.reason || "") + '</div></span></div>';
+}
+function pathHtml(t){
+  const cls = t.reachable ? "ok" : "no";
+  const tag = t.reachable ? "REACHABLE" : "BLOCKED";
+  const route = (t.path && t.path.length)
+    ? t.path.map(esc).join(' <span style="color:var(--muted)">&rarr;</span> ')
+    : "<em>no candidate path from internet</em>";
+  return '<div class="pathblock"><div class="proute">' + route +
+    ' &nbsp;<span class="' + cls + '">' + tag + '</span></div>' +
+    t.hops.map(hopHtml).join("") + '</div>';
+}
+
+function renderTrace(fid){
+  const v = DATA.verdicts.find(x => x.finding_id === fid);
+  if (!v) return;
+  const p = v.preconditions || {};
+  const x = v.exploitability || {};
+  const proposes =
+    '<div class="card proposes"><h3>1 &middot; Model proposes (Nemotron)</h3>' +
+    '<p class="guardnote" style="margin-top:0">Recorded stub response in offline mode; ' +
+    'live mode calls NVIDIA Nemotron via Nebius Token Factory.</p>' +
+    '<dl class="kv">' +
+    '<dt>target port</dt><dd>' + esc(p.port) + ' / ' + esc(p.protocol) + '</dd>' +
+    '<dt>auth required</dt><dd>' + boolTxt(p.auth_required) + '</dd>' +
+    '<dt>network vector</dt><dd>' + esc(p.network_vector) + '</dd>' +
+    '<dt>payload constraints</dt><dd>' + esc(p.payload_constraints) + '</dd>' +
+    '<dt>extraction confidence</dt><dd>' + esc(p.confidence) + '</dd>' +
+    '<dt>LLM narrative claim</dt><dd>' + esc(p.narrative_claim) + '</dd>' +
+    '</dl>' +
+    '<div class="badges">' + intelPills(x) + '</div>' +
+    (x.summary ? '<p class="guardnote">' + esc(x.summary) + '</p>' : '') +
+    '</div>';
+  const proves =
+    '<div class="card proves"><h3>2 &middot; Code proves (deterministic solver)</h3>' +
+    '<p class="guardnote" style="margin-top:0">Boolean reachability from <code>internet</code> to ' +
+    '<code>' + esc(v.host) + ':' + esc(v.port) + '/' + esc(v.protocol) + '</code> &mdash; ' +
+    'every hop validated against SG, NACL, route and listener rules.</p>' +
+    (v.trace.length ? v.trace.map(pathHtml).join("")
+      : '<p class="guardnote">No trace recorded.</p>') +
+    '</div>';
+  const decides =
+    '<div class="card decides" style="grid-column:1/-1"><h3>3 &middot; Product decides</h3>' +
+    '<div class="verdict ' + esc(v.decision) + '"><div class="lab">' +
+    verdictLabel(v.decision) + '</div>' +
+    '<p>' + esc(v.reason) + '</p>' +
+    '<p class="guardnote">Narrative guard: ' +
+    (v.guard_passed ? "LLM claim agrees with solver \u2014 check passed."
+      : "claim blocked or routed to human review \u2014 fail closed.") + '</p></div></div>';
+  document.getElementById("traceView").innerHTML =
+    '<div class="panels">' + proposes + proves + decides + '</div>';
+}
+
+function renderQueue(){
+  const byId = {};
+  DATA.verdicts.forEach(v => byId[v.finding_id] = v);
+  document.getElementById("qCount").textContent = "(" + DATA.actionable.length + ")";
+  document.getElementById("dCount").textContent = "(" + DATA.dismissed.length + ")";
+  let qh = "";
+  if (!DATA.actionable.length) qh = '<p class="guardnote">Queue empty.</p>';
+  DATA.actionable.forEach(id => {
+    const v = byId[id];
+    qh += '<div class="qitem"><div class="t">' + esc(v.finding_id) + ' &middot; ' +
+      esc(v.cve_id) + ' on ' + esc(v.host) + ':' + esc(v.port) + '/' + esc(v.protocol) +
+      '</div><div class="m">' + esc(v.title || "") + '</div>' +
+      '<div style="font-size:13px;margin-top:6px">' + esc(v.reason) + '</div>' +
+      '<div class="badges">' + intelPills(v.exploitability || {}) + '</div></div>';
+  });
+  document.getElementById("queueList").innerHTML = qh;
+  let dh = "";
+  DATA.dismissals.forEach(d => {
+    dh += '<details class="dism"><summary><strong style="color:var(--green)">\u2713 ' +
+      esc(d.finding_id) + '</strong> &middot; ' + esc(d.cve_id) + ' on ' +
+      esc(d.host) + ':' + esc(d.port) + ' &mdash; dismissed</summary>' +
+      '<div class="body"><div>' + esc(d.reason) + '</div>' +
+      '<div class="guardnote">Guard: ' + esc(d.guard) + '</div>' +
+      '<div class="badges">' + intelPills(d) + '</div>' +
+      '<div class="mono" style="margin-top:8px">log seq ' + esc(d.seq) +
+      ' &middot; ' + esc(d.ts) + '<br>hash ' + esc(d.hash) +
+      '<br>prev&nbsp;&nbsp;' + esc(d.prev_hash) + '</div>' +
+      '<div class="guardnote">Tamper-evident entry: any edit, reorder or non-tail ' +
+      'deletion breaks the chain (verify with <code>DismissalLog.verify()</code>).</div>' +
+      '</div></details>';
+  });
+  document.getElementById("dismissList").innerHTML = dh;
+}
+
+function init(){
+  renderRefusal();
+  renderStats();
+  const sel = document.getElementById("findingSelect");
+  DATA.verdicts.forEach(v => {
+    const o = document.createElement("option");
+    o.value = v.finding_id;
+    o.textContent = v.finding_id + " \u2014 " + v.cve_id + " on " + v.host +
+      " [" + v.decision + "]";
+    sel.appendChild(o);
+  });
+  const f001 = DATA.verdicts.find(v => v.finding_id === "F-001");
+  sel.value = f001 ? f001.finding_id : DATA.verdicts[0].finding_id;
+  sel.addEventListener("change", e => renderTrace(e.target.value));
+  renderTrace(sel.value);
+  renderQueue();
+  document.querySelectorAll(".tabbtn").forEach(b => {
+    b.addEventListener("click", () => {
+      document.querySelectorAll(".tabbtn").forEach(x => x.classList.remove("active"));
+      document.querySelectorAll(".pane").forEach(x => x.classList.remove("active"));
+      b.classList.add("active");
+      document.getElementById(b.dataset.pane).classList.add("active");
+    });
+  });
+}
+init();
+</script>
+</body>
+</html>

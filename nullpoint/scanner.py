@@ -53,6 +53,15 @@ def run_scan(
             trace=trace,
             guard_passed=allowed,
             exploitability=intel,
+            preconditions={
+                "port": pre.port,
+                "protocol": pre.protocol,
+                "auth_required": pre.auth_required,
+                "network_vector": pre.network_vector,
+                "payload_constraints": pre.payload_constraints,
+                "confidence": pre.confidence,
+                "narrative_claim": pre.narrative_claim,
+            },
         )
         if not allowed:
             verdict.decision = "needs-review"

@@ -32,3 +32,8 @@ class Verdict:
     reason: str = ""
     guard_passed: bool = False
     exploitability: dict = field(default_factory=dict)
+    # Structured exploit preconditions the model proposed for this finding
+    # (port, protocol, auth_required, network_vector, payload_constraints,
+    # confidence, narrative_claim). Stored so surfaces can render the
+    # "model proposes" half of the pipeline without re-querying.
+    preconditions: dict = field(default_factory=dict)
