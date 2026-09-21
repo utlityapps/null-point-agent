@@ -34,10 +34,11 @@ def test_deletion_is_detected(tmp_path):
     log = DismissalLog(path)
     log.append({"finding_id": "F-001", "decision": "dismissed", "reason": "no path"})
     log.append({"finding_id": "F-002", "decision": "dismissed", "reason": "no path"})
+    log.append({"finding_id": "F-003", "decision": "dismissed", "reason": "no path"})
     lines = open(path).read().strip().split("\n")
-    open(path, "w").write(lines[0] + "\n")  # drop the second entry
+    open(path, "w").write(lines[0] + "\n" + lines[2] + "\n")  # drop the middle entry
     ok, msg = log.verify()
-    assert ok is False  # sequence break
+    assert ok is False  # sequence break: expected seq 2, found 3
 
 
 def test_chain_resumes_across_runs(tmp_path):

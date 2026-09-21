@@ -7,6 +7,12 @@ reordering of history is detectable via :meth:`DismissalLog.verify`.
 User-facing copy calls this a "tamper-evident dismissal log" — never
 "cryptographic proof". It proves *we logged the decision*, not that the
 decision was correct; correctness comes from the deterministic solver.
+
+Honest limitation: like any hash chain, this detects modification,
+reordering, and deletion of non-tail entries, but NOT truncation of the
+tail (dropping the newest entries leaves a valid shorter chain). In
+production the latest hash should be anchored externally (e.g., published
+alongside each scan report); Phase 2 work.
 """
 from __future__ import annotations
 

@@ -56,13 +56,16 @@ def any_cidr_covers(rule_cidr: str, srcs: list[str]) -> bool:
     return any(cidr_covers(rule_cidr, s) for s in srcs)
 
 
+def _proto_num(p) -> str:
+    return {"tcp": "6", "udp": "17", "icmp": "1"}.get(str(p).lower(), str(p).lower())
+
+
 def proto_match(rule_proto, protocol: str) -> bool:
     """Match a rule protocol ('-1'/number/name) against a query protocol."""
     rp = str(rule_proto).lower()
     if rp in ("-1", "all"):
         return True
-    normalized = {"tcp": "6", "udp": "17", "icmp": "1"}.get(protocol.lower(), protocol.lower())
-    return rp == normalized
+    return _proto_num(rp) == _proto_num(protocol)
 
 
 class InfraGraph:
@@ -213,7 +216,7 @@ class InfraGraph:
             if (
                 lst.get("target_port", lst["port"]) == port
                 and next_node in lst.get("targets", [])
-                and proto_match("tcp" if lst.get("protocol", "TCP") == "TCP" else lst.get("protocol"), protocol)
+                and proto_match(lst.get("protocol", "TCP"), protocol)
             ):
                 return lst
         return None
