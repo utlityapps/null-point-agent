@@ -1,0 +1,26 @@
+# --- Python / pytest ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# --- Virtual envs ---
+.venv/
+venv/
+env/
+
+# --- Secrets: NEVER commit credentials. Ever. ---
+# API keys are read from the environment only (NEBIUS_API_KEY, TAVILY_API_KEY).
+.env
+.env.*
+*.pem
+*.key
+credentials*.json
+secrets*.json
+
+# --- Runtime artifacts (generated locally, not part of the repo) ---
+dismissals.jsonl
+*.jsonl
+*.log
