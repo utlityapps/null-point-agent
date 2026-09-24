@@ -16,9 +16,10 @@ topology in production). All inference and reasoning happen on Nebius.
   `https://api.tokenfactory.nebius.com/v1`, API key in the
   `Authorization: Bearer` header. Extraction uses temperature 0 and
   requests JSON-only output (`response_format: {"type": "json_object"}`).
-  Default model `nvidia/nemotron-3-nano-30b`, overridable via
-  `NEBIUS_MODEL` (exact model ID to be verified against the live
-  catalog).
+  Default model `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` (verified live
+  against the Nebius catalog on 2026-09-23), overridable via
+  `NEBIUS_MODEL`. The model is a reasoning model, so the client requests
+  a generous token budget (4096) — small budgets return empty content.
 - **Why it's load-bearing, not decorative:** Nemotron's output is the
   *input* to the deterministic reachability solver — the solver cannot
   test the right (port, protocol) pair without it. The narrative guard
@@ -41,9 +42,10 @@ never rescue an unreachable one.
 
 - **Live mode:** Nemotron precondition extraction and Tavily enrichment,
   keyed via `NEBIUS_API_KEY` / `TAVILY_API_KEY` environment variables
-  (`python -m nullpoint.cli scan --live`). Not yet exercised against
-  live accounts — hypothesis H3 (extraction accuracy scoring) is the
-  first live milestone.
+  (`python -m nullpoint.cli scan --live`). H3 (extraction accuracy
+  scoring) was exercised live on 2026-09-23: 20/20 exact-match on 20
+  labeled advisories via `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B`.
+  Tavily live enrichment remains unexercised.
 - **Offline / judge mode:** recorded fixture responses serve both
   integrations; the full pipeline — 28 tests, CLI scan, self-contained
   HTML report — runs with **zero credentials and zero network**. Keys

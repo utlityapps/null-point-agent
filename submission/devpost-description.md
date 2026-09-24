@@ -62,7 +62,7 @@ accepts untrusted traffic.
 |---|-------|--------|
 | H1 | Majority of "Critical" CVEs have no reachable ingress path | SUPPORTED offline — 10/11 dismissed (90.9%) |
 | H2 | Solver verdicts match hand-verified review on every fixture | SUPPORTED offline — incl. NACL first-match-wins edge cases |
-| H3 | Nemotron extracts correct (port, protocol, auth) ≥90% of the time | NOT YET TESTED — needs a live Nebius Token Factory key; extraction *interface* is tested offline via recorded stubs |
+| H3 | Nemotron extracts correct (port, protocol, auth) ≥90% of the time | SUPPORTED live — 20/20 exact-match (100%) on 20 labeled advisories, 2026-09-23, via Nebius Token Factory |
 | H4 | ≥10x alert reduction vs naive scanner | SUPPORTED offline — 11 raw alerts → 1 actionable |
 
 See `HYPOTHESES.md` in the repo — it is append-only, and retracted

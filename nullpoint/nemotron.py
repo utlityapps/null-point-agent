@@ -20,7 +20,12 @@ import requests
 from .models import Preconditions
 
 DEFAULT_BASE_URL = "https://api.tokenfactory.nebius.com/v1"  # override via NEBIUS_BASE_URL
-DEFAULT_MODEL = "nvidia/nemotron-3-nano-30b"  # override via NEBIUS_MODEL; verify against the Nebius catalog
+# Verified live against the Nebius catalog on 2026-09-23: this exact ID is
+# served. The shorter "nvidia/nemotron-3-nano-30b" is NOT in the catalog.
+DEFAULT_MODEL = "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B"  # override via NEBIUS_MODEL
+# Nemotron-3-Nano is a reasoning model: its chain-of-thought consumes the
+# token budget, so max_tokens must be generous or the final content is null.
+DEFAULT_MAX_TOKENS = 4096
 
 EXTRACTION_SYSTEM_PROMPT = """\
 You extract structured exploit preconditions from a CVE advisory.
@@ -97,10 +102,19 @@ class NemotronClient:
                     {"role": "user", "content": f"CVE {cve_id}: {cve_text}"},
                 ],
                 "temperature": 0,
+                "max_tokens": int(os.environ.get("NEBIUS_MAX_TOKENS", DEFAULT_MAX_TOKENS)),
                 "response_format": {"type": "json_object"},
             },
-            timeout=30,
+            timeout=120,
         )
         resp.raise_for_status()
-        content = resp.json()["choices"][0]["message"]["content"]
+        message = resp.json()["choices"][0]["message"]
+        content = message.get("content")
+        if not content:
+            # Reasoning models return content=null when the reasoning trace
+            # consumed the whole token budget. Raise, don't guess.
+            raise RuntimeError(
+                f"Nemotron returned empty content for {cve_id} "
+                "(reasoning consumed the token budget); raise max_tokens and retry"
+            )
         return json.loads(content)

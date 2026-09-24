@@ -39,11 +39,19 @@ CVE advisory text with ≥90% accuracy, so the solver always tests the right
 **Falsification bar:** <90% exact-match on (port, protocol, auth_required)
 over a held-out advisory set.
 
-**Status:** NOT TESTABLE OFFLINE — deferred. Requires a Nebius Token
-Factory API key and a labeled advisory set. Offline mode uses recorded
-stub responses; the extraction *interface* is tested
-(`tests/test_offline.py`), not the model's accuracy. Phase 2: run live
-against ~20 advisories and score.
+**Status:** SUPPORTED (live). 2026-09-23: ran live against 20 labeled
+advisories (`fixtures/h3_advisories.json`) via Nebius Token Factory with
+`nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` — **20/20 exact-match (100%)** on
+(port, protocol, auth_required), bar was ≥90%. Raw responses and per-case
+labels preserved in `fixtures/recorded/h3_live_run_2026-09-23.json`;
+runner at `scripts/h3_live_run.py`.
+
+Live-run corrections worth preserving: the repo's old default model ID
+(`nvidia/nemotron-3-nano-30b`) is not in the Nebius catalog and would 400;
+the served model is a *reasoning* model, so small `max_tokens` values return
+`content: null` (the reasoning trace eats the budget) — the client now
+defaults to 4096 and raises a clear error on empty content instead of
+crashing in `json.loads`.
 
 ## H4 — Order-of-magnitude alert reduction
 
