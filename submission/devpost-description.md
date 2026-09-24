@@ -78,9 +78,13 @@ claims stay visible.
   deferred).
 - Stateless NACL return traffic is not explicitly modeled; fixtures use
   the realistic egress-allow-all default.
-- Nemotron model ID and endpoint are verified against public docs, not
-  yet against a live account. Everything runs fully **offline with zero
-  credentials** — judges can reproduce every claim without keys.
+- Nemotron model ID and endpoint verified live against a Nebius account
+  on 2026-09-23 (H3: 20/20 exact-match extraction via
+  `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B`). Tavily enrichment is
+  integration-complete but unexercised live — it only ever feeds
+  ranking, never the reachability verdict.
+- Everything runs fully **offline with zero credentials** — judges can
+  reproduce every claim without keys.
 
 ## Run it yourself (zero credentials, zero network)
 

@@ -1,9 +1,11 @@
 # Sponsor tooling feedback — Nebius Token Factory (+ Tavily)
 
-Honest notes from building NullPoint Agent. Live-API experience is
-**pending an API key**; the feedback below covers documentation and
-integration design, and every item is marked for what is docs-verified
-vs live-tested. Nothing here is invented.
+Honest notes from building NullPoint Agent. Nebius feedback below is
+**live-tested**: on 2026-09-23 we ran hypothesis H3 against the real
+Token Factory API (20 labeled CVE advisories → 20/20 exact-match
+precondition extraction via `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B`).
+Tavily live enrichment remains unexercised; its notes are integration-
+design only. Nothing here is invented.
 
 ## What worked well
 
@@ -12,12 +14,11 @@ vs live-tested. Nothing here is invented.
    entire integration — no custom SDK, no new auth dance. Temperature 0
    plus JSON-only responses give us deterministic-shaped extraction
    output, which is exactly what a "model proposes, code proves"
-   architecture needs. *(Docs-verified; live call pending key.)*
-2. **Docs clarity.** The Token Factory introduction page walks from key
-   creation (API keys section → Create → save once, it can't be viewed
-   later) to a working Python snippet in one page. The auth model is
-   stated plainly: Bearer header, keep keys out of client-side code,
-   rotate on compromise.
+   architecture needs. *(Live-tested: all 20 H3 extractions returned
+   clean parseable JSON.)*
+2. **Structured output honored.** `response_format: {"type":
+   "json_object"}` worked on the Nemotron variant we used — no
+   prompt-level fallback was needed in the live run.
 3. **NVIDIA model catalog breadth.** Nemotron variants being first-class
    in the catalog is what makes the "NVIDIA model in a load-bearing
    role" requirement satisfiable without contortions — the model isn't
@@ -33,27 +34,31 @@ vs live-tested. Nothing here is invented.
    Token Factory docs' URL and made it overridable via
    `NEBIUS_BASE_URL`, but a single canonical URL in the docs would
    remove the guesswork for every hackathon team.
-2. **Model IDs need a live account to verify.** We set a Nemotron
-   default (`nvidia/nemotron-3-nano-30b`) from the public catalog, but
-   confirming an exact, currently-served model ID requires signing in —
-   the public catalog doesn't resolve this for an anonymous reader. A
-   small unauthenticated `GET /models`, or a pinned "hackathon
-   quickstart model ID," would help teams ship with confidence.
-3. **Structured output support is undocumented per model.** The docs
-   don't explicitly confirm `response_format: {"type": "json_object"}`
-   support on Nemotron variants; we coded for it on OpenAI-compatibility
-   grounds but haven't live-tested it. If a variant doesn't honor it,
-   our fallback is prompt-level JSON plus parse validation — worth a
-   docs line either way.
+2. **Model IDs must match the live catalog exactly.** Our first default
+   (`nvidia/nemotron-3-nano-30b`, guessed from the public catalog page)
+   400'd against the live API; the served ID is
+   `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B`. A pinned "hackathon
+   quickstart model ID" in the docs would save every team this round
+   trip. *(Live-tested.)*
+3. **Reasoning models eat small token budgets silently.** Nemotron is a
+   reasoning model: with a small `max_tokens` the reasoning trace
+   consumes the whole budget and the API returns `content: null` with
+   no error. We had to raise the budget to 4096 and add explicit
+   empty-content handling. A docs note — or a distinct error instead of
+   null content — would help. *(Live-tested.)*
 4. **Tavily (non-sponsor, for completeness).** The search API was
    straightforward to integrate, but EPSS scores are not available via
    search — we left `epss: null` and documented that a dedicated feed
-   would be needed for EPSS-based ranking.
+   would be needed for EPSS-based ranking. *(Integration-design only;
+   live call pending key.)*
 
 ## Bottom line
 
-Nothing here blocked the build: the offline-stub architecture meant
+Nothing blocked the build: the offline-stub architecture meant
 integration code, all 28 tests, and the demo all work with zero keys.
-The API key unlocks live extraction-accuracy scoring (hypothesis H3),
-not the demo itself. If the docs nits above were fixed, the path from
-"new account" to "first live Nemotron call" would be under ten minutes.
+The Nebius key unlocked exactly what we predicted — live
+extraction-accuracy scoring (H3: 20/20 on 2026-09-23) — and surfaced
+two real gotchas (exact model IDs, reasoning token budgets) that are
+worth a docs line each. If those were fixed, the path from "new
+account" to "first live Nemotron call" would be under ten minutes.
+Tavily live enrichment is still unexercised.

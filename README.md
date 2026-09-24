@@ -102,8 +102,9 @@ HYPOTHESES.md       falsifiable hypotheses + status
 ## Roadmap
 
 - Dual-surface UI: done (`python -m nullpoint.report --offline`).
-- Remaining: live Nebius/Tavily runs (needs API keys — human step), ≤3-min
-  demo video, Devpost submission.
+- Nebius live run: done — H3 scored 20/20 live on 2026-09-23.
+- Tavily live: pending API key (optional enrichment; offline stubs cover the demo).
+- Remaining: ≤3-min demo video, Devpost submission.
 - See `HYPOTHESES.md` for what is proven offline vs deferred to live runs.
 
 ## License
