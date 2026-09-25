@@ -7,6 +7,27 @@ precondition extraction via `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B`).
 Tavily live enrichment remains unexercised; its notes are integration-
 design only. Nothing here is invented.
 
+## What we used it for
+
+One load-bearing job: **structured exploit-precondition extraction**.
+NullPoint feeds raw CVE advisory text to `nvidia/NVIDIA-Nemotron-3-Nano-
+30B-A3B` through Nebius Token Factory and gets back JSON —
+`(port, protocol, auth_required, payload_constraints)` — which the
+deterministic NetworkX solver consumes directly. The model proposes;
+the code proves. We did not use Nebius AI Cloud (GPU compute) — Token
+Factory served everything the architecture needed.
+
+## Onboarding: API key to first live call
+
+From having the API key in hand to a first successful extraction call
+took a single working session. The path was: point an OpenAI-style
+client at the docs' base URL, set `NEBIUS_API_KEY`, pick a model ID —
+then iterate on exactly two surprises, both documented below (the
+guessed model ID 400'ing, and the reasoning model's silent
+`content: null` on small token budgets). No SDK install, no IAM-style
+permission maze, no waiting on quota grants. The only real friction
+was in model discovery and budget sizing, not in access itself.
+
 ## What worked well
 
 1. **OpenAI-compatible endpoint.** Pointing an OpenAI-style client at
@@ -62,3 +83,17 @@ two real gotchas (exact model IDs, reasoning token budgets) that are
 worth a docs line each. If those were fixed, the path from "new
 account" to "first live Nemotron call" would be under ten minutes.
 Tavily live enrichment is still unexercised.
+
+## Would we build with Token Factory again?
+
+Yes — for any "LLM as a structured front end for deterministic code"
+pattern. The reasons are load-bearing, not cosmetic: the OpenAI-
+compatible endpoint means the integration is ~40 lines with no vendor
+SDK; `response_format: json_object` is honored, which is the difference
+between "the model proposes structured input" and "we regex-scrape
+prose"; and Nemotron variants being first-class in the catalog means
+the NVIDIA-model requirement is satisfiable without contorting the
+architecture. We would not switch to AI Cloud for this shape of
+problem — Token Factory's serverless models were exactly the right
+abstraction for request/response extraction with no training or
+fine-tuning in the loop.

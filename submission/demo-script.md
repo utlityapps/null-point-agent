@@ -35,12 +35,13 @@ proves** (hop-by-hop trace: internet → … → internal ALB, no ingress
 edge; NACL deny rule 95 on 8080), **Product decides** (verdict pending).
 
 *Narration:*
-> "NullPoint does the opposite. Nemotron reads the advisory and proposes
-> the exploit preconditions — port 8080, unauthenticated HTTP. Then the
-> deterministic graph engine tries to prove an attacker can get there.
-> Every hop, every security group, every NACL rule. And it can't. The
-> cluster sits behind an internal-only load balancer with no public
-> route, and an explicit deny on the port."
+> "NullPoint does the opposite. NVIDIA Nemotron — served through Nebius
+> Token Factory — reads the advisory and proposes the exploit
+> preconditions: port 8080, unauthenticated HTTP. Then the deterministic
+> graph engine tries to prove an attacker can get there. Every hop,
+> every security group, every NACL rule. And it can't. The cluster sits
+> behind an internal-only load balancer with no public route, and an
+> explicit deny on the port."
 
 ## 1:50–2:30 — The Refusal (40s)
 
@@ -62,9 +63,10 @@ gateway admin API, genuinely internet-facing). Big stat overlay:
 **11 raw alerts → 1 actionable.**
 
 *Narration:*
-> "Eleven alerts in, one ticket out. The single host that actually
-> accepts untrusted traffic. That's the whole product: falsify first,
-> alert later."
+> "Eleven alerts in, one ticket out — for the DevOps and SOC teams
+> drowning in scanner noise. The single host that actually accepts
+> untrusted traffic. That's the whole product: falsify first, alert
+> later."
 
 ## 2:55–3:00 — Close (5s)
 
