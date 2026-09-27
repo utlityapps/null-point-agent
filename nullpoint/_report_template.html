@@ -325,6 +325,8 @@ function renderTrace(fid){
     '<dt>LLM narrative claim</dt><dd>' + esc(p.narrative_claim) + '</dd>' +
     '</dl>' +
     '<div class="badges">' + intelPills(x) + '</div>' +
+    '<p class="guardnote">Threat intel via Tavily &mdash; enrichment only, ' +
+    'never touches the verdict.</p>' +
     (x.summary ? '<p class="guardnote">' + esc(x.summary) + '</p>' : '') +
     '</div>';
   const proves =
@@ -360,7 +362,8 @@ function renderQueue(){
       esc(v.cve_id) + ' on ' + esc(v.host) + ':' + esc(v.port) + '/' + esc(v.protocol) +
       '</div><div class="m">' + esc(v.title || "") + '</div>' +
       '<div style="font-size:13px;margin-top:6px">' + esc(v.reason) + '</div>' +
-      '<div class="badges">' + intelPills(v.exploitability || {}) + '</div></div>';
+      '<div class="badges">' + intelPills(v.exploitability || {}) + '</div>' +
+      '<div class="guardnote">Threat intel via Tavily &mdash; enrichment only.</div></div>';
   });
   document.getElementById("queueList").innerHTML = qh;
   let dh = "";
