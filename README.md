@@ -102,8 +102,10 @@ python -m nullpoint.aws_import --sgs sgs.json --nacls nacls.json \
   --vpcs vpcs.json --igws igws.json -o infra.json
 ```
 
-Instance services (which ports the solver tests) come from an optional
-`nullpoint:services` tag, e.g. `8080/TCP:analytics-app,9100/TCP`.
+Instance services are parsed from an optional `nullpoint:services` tag,
+e.g. `8080/TCP:analytics-app,9100/TCP`, and kept in the infra snapshot for
+inventory context. The port the solver *tests* always comes from the
+scanner finding's observed port — never from the model, never from the tag.
 ELBv2 load balancers are supported via an optional `--elbv2` bundle —
 see `python -m nullpoint.aws_import --help`.
 
@@ -113,6 +115,30 @@ Scan the imported infrastructure directly:
 python -m nullpoint.cli scan --offline --infra infra.json
 python -m nullpoint.report --offline --infra infra.json
 ```
+
+## Real scanner findings (`--findings`)
+
+Findings are not hard-coded: `scan` and `report` accept `--findings` with
+either native findings JSON (`{"findings": [...]}`) or raw
+`aws inspector2 list-findings` output (auto-detected):
+
+```bash
+aws inspector2 list-findings \
+  --filter-criteria '{"findingStatus":[{"comparison":"EQUALS","value":"ACTIVE"}]}' \
+  > inspector-findings.json
+python -m nullpoint.cli scan --infra infra.json --findings inspector-findings.json --live
+```
+
+Two honest limitations, enforced fail-closed:
+
+- Inspector2 package findings carry **no port**, so they route to human
+  review — the solver tests the observed port, and with no observed port
+  there is nothing to prove.
+- Findings on non-EC2 resources (e.g. ECR images) map to host `unknown`
+  and route to human review via the unknown-host rule.
+
+Real CVE IDs need live mode (`--live` with `NEBIUS_API_KEY` /
+`TAVILY_API_KEY`); offline stubs only cover the fixture CVEs.
 
 ## Layout
 

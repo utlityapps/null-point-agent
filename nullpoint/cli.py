@@ -16,6 +16,7 @@ import pathlib
 
 from . import graph as graph_mod
 from .dismissal_log import DismissalLog
+from .findings import load_findings
 from .guard import NarrativeGuard
 from .nemotron import NemotronClient
 from .scanner import run_scan
@@ -40,7 +41,11 @@ def _reduction_str(raw: int, n_act: int) -> str:
 def cmd_scan(args: argparse.Namespace) -> int:
     infra_path = pathlib.Path(args.infra) if args.infra else FIXTURES / "infra.json"
     infra = load_json(infra_path)
-    findings = load_json(FIXTURES / "cves.json")["findings"]
+    if args.findings:
+        findings = load_findings(args.findings)
+        print(f"Loaded {len(findings)} findings from {args.findings}")
+    else:
+        findings = load_json(FIXTURES / "cves.json")["findings"]
 
     live_nemotron = bool(args.live and os.environ.get("NEBIUS_API_KEY"))
     live_tavily = bool(args.live and os.environ.get("TAVILY_API_KEY"))
@@ -110,6 +115,9 @@ def main(argv: list[str] | None = None) -> int:
     scan.add_argument("--infra", default=None,
                       help="Path to infra.json (default: fixtures/infra.json). "
                            "Use the AWS importer's output to scan real infrastructure.")
+    scan.add_argument("--findings", default=None,
+                      help="Path to findings JSON (default: fixtures/cves.json). "
+                           "Accepts native findings or raw `aws inspector2 list-findings` output.")
     args = parser.parse_args(argv)
     if args.command == "scan":
         return cmd_scan(args)
