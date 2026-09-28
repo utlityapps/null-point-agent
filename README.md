@@ -104,8 +104,11 @@ python -m nullpoint.aws_import --sgs sgs.json --nacls nacls.json \
 
 Instance services are parsed from an optional `nullpoint:services` tag,
 e.g. `8080/TCP:analytics-app,9100/TCP`, and kept in the infra snapshot for
-inventory context. The port the solver *tests* always comes from the
+inventory context. The port the solver *tests* always starts from the
 scanner finding's observed port — never from the model, never from the tag.
+(Prove first, then doubt: when the observed and model ports disagree, both
+are tested; if either proves reachable the finding is actionable. A wrong
+model port can only add a ticket, never dismiss one.)
 ELBv2 load balancers are supported via an optional `--elbv2` bundle —
 see `python -m nullpoint.aws_import --help`.
 
@@ -131,14 +134,31 @@ python -m nullpoint.cli scan --infra infra.json --findings inspector-findings.js
 
 Two honest limitations, enforced fail-closed:
 
-- Inspector2 package findings carry **no port**, so they route to human
-  review — the solver tests the observed port, and with no observed port
-  there is nothing to prove.
+- Inspector2 package findings carry **no port**. If the host has no internet
+  path at all, the any-port proof dismisses them anyway; on hosts with an
+  internet path they route to human review (nothing left to prove).
+- Only `PACKAGE_VULNERABILITY` findings with a real CVE ID are converted —
+  `NETWORK_REACHABILITY` findings ("Port 22 is reachable…") are skipped,
+  not coerced into fake CVE IDs.
 - Findings on non-EC2 resources (e.g. ECR images) map to host `unknown`
   and route to human review via the unknown-host rule.
 
 Real CVE IDs need live mode (`--live` with `NEBIUS_API_KEY` /
 `TAVILY_API_KEY`); offline stubs only cover the fixture CVEs.
+
+## Seeing the fail-closed routes
+
+The bundled demo (`fixtures/cves.json`) resolves to 11 findings → 1
+actionable, 10 dismissed, 0 needs-review. To watch the human-review queue
+work, run the review demo — one finding on a host missing from the snapshot,
+one unprocessable offline:
+
+```bash
+python -m nullpoint.cli scan --offline --findings fixtures/findings-review-demo.json
+```
+
+Both land in `NEEDS HUMAN REVIEW` via different fail-closed routes, and the
+scan completes instead of crashing.
 
 ## Layout
 

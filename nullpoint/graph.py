@@ -330,6 +330,17 @@ class InfraGraph:
     # ------------------------------------------------------------------
     # public API
     # ------------------------------------------------------------------
+    def has_any_path(self, source: str, host: str) -> bool:
+        """True when ANY topology path exists from ``source`` to ``host``.
+
+        Port-agnostic: if this is False, no (port, protocol) probe can ever
+        succeed, so a non-exposure proof holds for every port.
+        """
+        try:
+            return nx.has_path(self.G, source, host)
+        except nx.NetworkXException:
+            return False
+
     def check_reachability(self, source: str, host: str, port: int, protocol: str = "TCP"):
         """Boolean reachability from ``source`` to ``host:port/protocol``.
 

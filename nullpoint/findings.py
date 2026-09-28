@@ -14,11 +14,14 @@ Two input formats are accepted (auto-detected by :func:`load_findings`):
 
 Inspector2 notes (honest limitations, not gaps):
 
+- Only ``PACKAGE_VULNERABILITY`` findings with a real CVE ID are converted.
+  ``NETWORK_REACHABILITY`` findings ("Port 22 is reachable…") carry no CVE
+  and are skipped — converting one's title into a CVE ID would be garbage.
 - Package-vulnerability findings name the CVE
   (``packageVulnerabilityDetails.vulnerabilityId``) and the EC2 instance
-  (``resources[0].id``) but carry **no port**. Those findings fail closed to
-  human review: the solver tests the observed port, and with no observed
-  port there is nothing to prove. Absence of a port is absence of evidence.
+  (``resources[0].id``) but carry **no port**. On hosts with no internet
+  path at all the scanner dismisses them via the any-port proof; on hosts
+  with an internet path they fail closed to human review (nothing to test).
 - Findings on non-EC2 resources (e.g. ECR images) get ``host="unknown"``,
   which the scanner routes to human review via the unknown-host rule.
 - Real CVE IDs have no recorded offline stubs, so real findings need live
@@ -28,6 +31,10 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
+
+#: A real CVE ID. Anything else (titles, ARNs, "Port") is not converted.
+_CVE_RE = re.compile(r"^CVE-\d{4}-\d+$", re.IGNORECASE)
 
 
 def is_inspector2_doc(doc: dict) -> bool:
@@ -40,14 +47,24 @@ def is_inspector2_doc(doc: dict) -> bool:
 
 
 def inspector2_to_findings(doc: dict) -> list[dict]:
-    """Convert ``aws inspector2 list-findings`` JSON to NullPoint findings."""
+    """Convert ``aws inspector2 list-findings`` JSON to NullPoint findings.
+
+    Only ``PACKAGE_VULNERABILITY`` findings with a real CVE ID are kept;
+    network-reachability findings and non-CVE entries are skipped, not
+    coerced.
+    """
     out = []
-    for i, f in enumerate(doc.get("findings", [])):
+    n = 0
+    for f in doc.get("findings", []):
+        if str(f.get("type") or "").upper() != "PACKAGE_VULNERABILITY":
+            # e.g. NETWORK_REACHABILITY ("Port 22 is reachable…") — no CVE,
+            # nothing for the precondition extractor to work with.
+            continue
         pv = f.get("packageVulnerabilityDetails") or {}
-        cve_id = pv.get("vulnerabilityId") or ""
-        if not cve_id:
-            # Fall back to the first token of the title, then the ARN.
-            cve_id = (f.get("title") or "").split(" ")[0] or f.get("findingArn", "")
+        cve_id = str(pv.get("vulnerabilityId") or "").strip()
+        if not _CVE_RE.match(cve_id):
+            continue
+        n += 1
         host = "unknown"
         for r in f.get("resources", []) or []:
             # Only EC2 instances exist in the infra graph; anything else
@@ -57,13 +74,14 @@ def inspector2_to_findings(doc: dict) -> list[dict]:
                 host = r["id"]
                 break
         out.append({
-            "id": f"INSP-{i + 1:03d}",
+            "id": f"INSP-{n:03d}",
             "cve_id": cve_id,
             "title": f.get("title", ""),
             "description": f.get("description", ""),
             "host": host,
-            # Inspector2 package findings carry no port: the scanner fails
-            # these closed to human review (nothing to prove).
+            # Inspector2 package findings carry no port: on hosts with no
+            # internet path the any-port proof dismisses them; otherwise
+            # the scanner fails them closed to human review.
             "port": None,
             "protocol": "TCP",
             "severity": str(f.get("severity") or "UNKNOWN").upper(),

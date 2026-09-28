@@ -49,6 +49,34 @@ def _inspector2_doc():
                     "vulnerabilityId": "CVE-2026-42424",
                 },
             },
+            {
+                # Network-reachability finding: no CVE — skipped, not coerced.
+                "findingArn": "arn:aws:inspector2:us-east-1:123:finding/ghi",
+                "type": "NETWORK_REACHABILITY",
+                "title": "Port 22 is reachable from 0.0.0.0/0",
+                "description": "TCP port 22 reachable.",
+                "severity": "HIGH",
+                "status": "ACTIVE",
+                "resources": [
+                    {"type": "AWS_EC2_INSTANCE", "id": "i-bastion-1"}
+                ],
+                "networkReachabilityDetails": {"openPortRange": {"begin": 22, "end": 22}},
+            },
+            {
+                # Package finding with a non-CVE ID — skipped, not coerced.
+                "findingArn": "arn:aws:inspector2:us-east-1:123:finding/jkl",
+                "type": "PACKAGE_VULNERABILITY",
+                "title": "Some advisory without a CVE",
+                "description": "No CVE assigned.",
+                "severity": "MEDIUM",
+                "status": "ACTIVE",
+                "resources": [
+                    {"type": "AWS_EC2_INSTANCE", "id": "i-gateway-1"}
+                ],
+                "packageVulnerabilityDetails": {
+                    "vulnerabilityId": "GHSA-xxxx-yyyy",
+                },
+            },
         ],
         "nextToken": "tok",
     }
@@ -62,6 +90,8 @@ def test_detects_inspector2_output():
 
 def test_inspector2_conversion_maps_fields():
     out = inspector2_to_findings(_inspector2_doc())
+    # Only the two PACKAGE_VULNERABILITY findings with real CVE IDs survive:
+    # the NETWORK_REACHABILITY finding and the non-CVE advisory are skipped.
     assert len(out) == 2
     f1 = out[0]
     assert f1["id"] == "INSP-001"
@@ -71,6 +101,7 @@ def test_inspector2_conversion_maps_fields():
     assert f1["port"] is None  # Inspector2 carries no port
     # Image finding: host falls back to "unknown" (scanner fails it closed).
     assert out[1]["host"] == "unknown"
+    assert all("Port" not in f["cve_id"] for f in out)
 
 
 def test_load_findings_auto_detects(tmp_path):
@@ -88,13 +119,36 @@ def test_load_findings_auto_detects(tmp_path):
 
 def test_converted_finding_scans_offline_end_to_end(infra, fixtures_dir):
     # CVE-2026-31007 has recorded offline stubs; i-gateway-1 is in the
-    # fixture infra. No observed port -> fail closed to human review.
+    # fixture infra and HAS an internet path, so the model's port (8443) is
+    # tested and proves reachable -> actionable even with no observed port.
     findings = inspector2_to_findings(_inspector2_doc())
     nemotron = NemotronClient.from_fixtures(fixtures_dir)
     tavily = TavilyClient.from_fixtures(fixtures_dir)
     report = run_scan(infra, findings[:1], nemotron, tavily, NarrativeGuard(), None)
     assert report["dismissed"] == []
+    assert report["needs_review"] == []
+    assert len(report["actionable"]) == 1
+    assert report["actionable"][0].finding_id == "INSP-001"
+
+
+def test_converted_finding_without_internet_path_dismisses(infra, fixtures_dir):
+    # Same shape, but the host has no internet path at all: the any-port
+    # proof dismisses even with no observed port. (Claude's 2-of-2 case.)
+    findings = inspector2_to_findings(_inspector2_doc())
+    f = dict(findings[0])
+    f["host"] = "i-analytics-1"
+    nemotron = NemotronClient.from_fixtures(fixtures_dir)
+    tavily = TavilyClient.from_fixtures(fixtures_dir)
+    report = run_scan(infra, [f], nemotron, tavily, NarrativeGuard(), None)
+    assert len(report["dismissed"]) == 1
+    assert "any port" in report["dismissed"][0].reason
+
+
+def test_converted_image_finding_goes_to_review(infra, fixtures_dir):
+    # ECR image -> host "unknown" -> unknown-host rule -> needs-review.
+    findings = inspector2_to_findings(_inspector2_doc())
+    nemotron = NemotronClient.from_fixtures(fixtures_dir)
+    tavily = TavilyClient.from_fixtures(fixtures_dir)
+    report = run_scan(infra, findings[1:], nemotron, tavily, NarrativeGuard(), None)
     assert len(report["needs_review"]) == 1
-    v = report["needs_review"][0]
-    assert v.finding_id == "INSP-001"
-    assert "no observed port" in v.reason
+    assert "not in the infrastructure snapshot" in report["needs_review"][0].reason

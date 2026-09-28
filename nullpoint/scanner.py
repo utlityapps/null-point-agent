@@ -1,31 +1,34 @@
 """NullPoint scan orchestrator: model proposes, code proves, product decides.
 
-Pipeline per finding:
-0. Fail-closed input checks (before any proof is attempted):
-   - host not in the infra snapshot -> "needs-review". Absence of evidence
-     (another region, stale inventory) is not evidence of non-exposure.
-   - no observed port on the finding -> "needs-review". Nothing to test.
-   - model port/protocol disagrees with the scanner's observed
-     port/protocol -> "needs-review". The solver tests the OBSERVED port,
-     never the model's guess: a wrong model port that dismisses a real
-     ticket is fail-open.
+Pipeline per finding — prove first, then doubt:
+0. Unknown host (not in the infra snapshot) -> "needs-review". Absence of
+   evidence (another region, stale inventory) is not evidence of non-exposure.
 1. Nemotron extracts exploit preconditions from the CVE advisory (stubbed
    offline from recorded fixtures; live via Nebius Token Factory).
 2. Tavily enriches with exploitability/weaponization metadata (stubbed offline).
-3. The deterministic graph solver computes boolean reachability from the
-   internet to (host, observed port, observed protocol).
-4. The narrative guard fail-closed checks the LLM's exposure claim against
+3. PROVE: if the host has no network path from the source on ANY port, the
+   proof holds for every port — direct-delivery findings are dismissed even
+   with no observed port or a wrong model port. (Data-plane/unknown delivery
+   still goes to review: a network proof cannot falsify data-plane delivery.)
+4. Otherwise the host has some internet path: test the scanner's OBSERVED
+   port AND the model's port if different. Doubt is resolved by proof, not
+   by review — if either is reachable the finding is actionable. A wrong
+   model port can delay nothing: it can only add a ticket, never dismiss one.
+5. The narrative guard fail-closed checks the LLM's exposure claim against
    the solver. The solver always wins: a blocked claim is logged as a caught
    model error, but it never overrides the solver's verdict — a blocked
    claim is never silently acted on, and never vetoes a proof.
-5. Reachable  -> "actionable" (ranked queue). Proven exposure outranks
+6. Reachable  -> "actionable" (ranked queue). Proven exposure outranks
    payload routing: a reachable finding is queued even for data-plane
    payloads.
-   Unreachable + data-plane/unknown delivery -> "needs-review". A network
-   proof cannot falsify data-plane delivery, so fail closed to a human,
-   never to "dismissed".
+   Unreachable + data-plane/unknown delivery -> "needs-review".
    Unreachable + direct delivery -> "dismissed" (tamper-evident dismissal
    log entry).
+
+Per-finding isolation: each finding is processed inside its own try/except.
+An unrecorded CVE in offline mode, a failed live Nemotron/Tavily call, or
+any other per-finding error sends THAT finding to review — it never crashes
+the scan.
 """
 from __future__ import annotations
 
@@ -44,87 +47,143 @@ from .tavily import TavilyClient
 # data-plane delivery (cf. Log4Shell via log pipelines).
 
 
-def run_scan(
-    infra: dict,
-    findings: list[dict],
+def _note_blocked_claim(verdict: Verdict, narrative_claim: str,
+                        guard_reason: str, allowed: bool) -> None:
+    # The solver always wins: a blocked narrative claim is recorded as a
+    # caught model error, but it never overrides the solver's verdict —
+    # neither to suppress a real ticket nor to veto a proof.
+    # Own sentence, not buried mid-paragraph.
+    if allowed:
+        return
+    if not verdict.reason.endswith("."):
+        verdict.reason += "."
+    verdict.reason += (
+        f" Guard: blocked the LLM's {narrative_claim!r} exposure claim "
+        f"({guard_reason}); the solver's verdict stands."
+    )
+
+
+def _scan_one(
+    solver: graph_mod.InfraGraph,
+    finding: dict,
     nemotron: NemotronClient,
     tavily: TavilyClient,
-    guard: NarrativeGuard | None = None,
-    dismissal_log: DismissalLog | None = None,
-    source: str = graph_mod.INTERNET,
-) -> dict:
-    solver = graph_mod.InfraGraph(infra)
-    guard = guard or NarrativeGuard()
-    verdicts: list[Verdict] = []
-
-    for finding in findings:
-        cve_id = finding["cve_id"]
-        host = finding["host"]
+    guard: NarrativeGuard,
+    source: str,
+) -> tuple[Verdict, str]:
+    cve_id = finding["cve_id"]
+    host = finding["host"]
+    observed_port = finding.get("port")
+    observed_proto = str(finding.get("protocol") or "TCP").upper()
+    verdict = Verdict(
+        finding_id=finding["id"],
+        cve_id=cve_id,
+        host=host,
+        port=int(observed_port or 0),
+        protocol=observed_proto,
+        reachable=False,
+        guard_passed=True,
+    )
+    try:
         pre = nemotron.extract_preconditions(cve_id, finding.get("description", ""))
         intel = tavily.get_exploitability(cve_id)
-        preconditions = {
-            "port": pre.port,
-            "protocol": pre.protocol,
-            "auth_required": pre.auth_required,
-            "network_vector": pre.network_vector,
-            "delivery": pre.delivery,
-            "payload_constraints": pre.payload_constraints,
-            "confidence": pre.confidence,
-            "narrative_claim": pre.narrative_claim,
-        }
-        observed_port = finding.get("port")
-        observed_proto = str(finding.get("protocol") or "TCP").upper()
-        verdict = Verdict(
-            finding_id=finding["id"],
-            cve_id=cve_id,
-            host=host,
-            port=int(observed_port or 0),
-            protocol=observed_proto,
-            reachable=False,
-            guard_passed=True,
-            exploitability=intel,
-            preconditions=preconditions,
+    except Exception as exc:  # noqa: BLE001 — fail closed, never crash the scan
+        # Per-finding isolation: one bad finding (unrecorded CVE offline, a
+        # failed live API call, malformed input) goes to human review. The
+        # scan continues with the rest.
+        verdict.decision = "needs-review"
+        verdict.reason = (
+            f"could not process this finding ({type(exc).__name__}: {exc}) — "
+            "failing closed to human review"
         )
-        guard_reason = ""
+        verdict.exploitability = {}
+        verdict.preconditions = {}
+        return verdict, ""
 
-        if host not in solver.G:
-            # Fail closed: a host missing from the snapshot (another region,
-            # a new instance, stale inventory) is absence of evidence, not
-            # evidence of absence — it must never be dismissed as "no exposure".
-            verdict.decision = "needs-review"
+    verdict.exploitability = intel
+    verdict.preconditions = {
+        "port": pre.port,
+        "protocol": pre.protocol,
+        "auth_required": pre.auth_required,
+        "network_vector": pre.network_vector,
+        "delivery": pre.delivery,
+        "payload_constraints": pre.payload_constraints,
+        "confidence": pre.confidence,
+        "narrative_claim": pre.narrative_claim,
+    }
+    guard_reason = ""
+
+    if host not in solver.G:
+        # Fail closed: a host missing from the snapshot (another region,
+        # a new instance, stale inventory) is absence of evidence, not
+        # evidence of absence — it must never be dismissed as "no exposure".
+        verdict.decision = "needs-review"
+        verdict.reason = (
+            f"host {host} is not in the infrastructure snapshot "
+            "(wrong region? stale inventory?) — cannot prove non-exposure; "
+            "failing closed to human review"
+        )
+        return verdict, guard_reason
+    elif not solver.has_any_path(source, host):
+        # PROVE FIRST: no network path from the source to this host on ANY
+        # port. The proof holds for every port, so a missing observed port
+        # or a wrong model port cannot weaken it. Probe one port anyway for
+        # the evidence trace (why there is no path), not for the decision.
+        probe_port = int(observed_port) if observed_port is not None else pre.port
+        _, trace = solver.check_reachability(source, host, probe_port, observed_proto)
+        verdict.trace = trace
+        allowed, guard_reason = guard.check(cve_id, host, pre.narrative_claim, False)
+        verdict.guard_passed = allowed
+        if pre.delivery == "direct":
+            verdict.decision = "dismissed"
             verdict.reason = (
-                f"host {host} is not in the infrastructure snapshot "
-                "(wrong region? stale inventory?) — cannot prove non-exposure; "
-                "failing closed to human review"
-            )
-        elif observed_port is None:
-            # Fail closed: no observed port means nothing for the solver to test.
-            verdict.decision = "needs-review"
-            verdict.reason = (
-                "the finding carries no observed port — there is nothing for "
-                "the solver to test; failing closed to human review"
-            )
-        elif int(observed_port) != pre.port or observed_proto != pre.protocol.upper():
-            # Fail closed: the solver tests the OBSERVED port, not the model's
-            # guess — a wrong model port that dismisses a real ticket is
-            # fail-open. On disagreement we cannot tell which side is right.
-            verdict.decision = "needs-review"
-            verdict.reason = (
-                f"the model extracted {pre.port}/{pre.protocol} but the scanner "
-                f"observed {observed_port}/{observed_proto} — cannot tell which "
-                "is right; failing closed to human review"
+                f"no network path from {source} to {host} on any port — the "
+                f"proof holds regardless of port ({solver.summarize_denial(trace)})"
             )
         else:
-            reachable, trace = solver.check_reachability(
-                source, host, int(observed_port), observed_proto)
-            allowed, guard_reason = guard.check(cve_id, host, pre.narrative_claim, reachable)
-            verdict.reachable = reachable
-            verdict.trace = trace
+            verdict.decision = "needs-review"
+            verdict.reason = (
+                f"no network path from {source} to {host}, but payload delivery "
+                f"is {pre.delivery!r} — a network proof cannot falsify "
+                "data-plane delivery; failing closed to human review"
+            )
+        _note_blocked_claim(verdict, pre.narrative_claim, guard_reason, allowed)
+    else:
+        # The host has some internet path: resolve doubt by proof. Test the
+        # scanner's OBSERVED port and the model's port if different — if
+        # either is reachable, the finding is actionable. A wrong model port
+        # can only add a ticket here, never dismiss one.
+        candidates: list[tuple[int, str]] = []
+        if observed_port is not None:
+            candidates.append((int(observed_port), observed_proto))
+        model_pp = (pre.port, pre.protocol.upper())
+        if model_pp not in candidates:
+            candidates.append(model_pp)
+        if not candidates:
+            verdict.decision = "needs-review"
+            verdict.reason = (
+                "no observed port and no model port — there is nothing for "
+                "the solver to test; failing closed to human review"
+            )
+        else:
+            traces: list[dict] = []
+            reachable_any = False
+            for cport, cproto in candidates:
+                r, t = solver.check_reachability(source, host, cport, cproto)
+                traces.extend(t)
+                if r:
+                    reachable_any = True
+                    verdict.port, verdict.protocol = cport, cproto
+                    break
+            verdict.reachable = reachable_any
+            verdict.trace = traces
+            allowed, guard_reason = guard.check(
+                cve_id, host, pre.narrative_claim, reachable_any)
             verdict.guard_passed = allowed
-            if reachable:
+            if reachable_any:
                 verdict.decision = "actionable"
                 verdict.reason = (
-                    f"solver proves {host}:{int(observed_port)}/{observed_proto} "
+                    f"solver proves {host}:{verdict.port}/{verdict.protocol} "
                     f"reachable from {source}; "
                     f"KEV-listed={intel.get('kev_listed')}, weaponized={intel.get('weaponized')}"
                 )
@@ -142,30 +201,38 @@ def run_scan(
                 )
             else:
                 verdict.decision = "dismissed"
-                verdict.reason = solver.summarize_denial(trace)
-            if not allowed:
-                # The solver always wins: a blocked narrative claim is recorded
-                # as a caught model error, but it never overrides the solver's
-                # verdict — neither to suppress a real ticket nor to veto a proof.
-                # Own sentence, not buried mid-paragraph.
-                if not verdict.reason.endswith("."):
-                    verdict.reason += "."
-                verdict.reason += (
-                    f" Guard: blocked the LLM's {pre.narrative_claim!r} exposure claim "
-                    f"({guard_reason}); the solver's verdict stands."
-                )
+                verdict.reason = solver.summarize_denial(traces)
+            _note_blocked_claim(verdict, pre.narrative_claim, guard_reason, allowed)
+    return verdict, guard_reason
+
+
+def run_scan(
+    infra: dict,
+    findings: list[dict],
+    nemotron: NemotronClient,
+    tavily: TavilyClient,
+    guard: NarrativeGuard | None = None,
+    dismissal_log: DismissalLog | None = None,
+    source: str = graph_mod.INTERNET,
+) -> dict:
+    solver = graph_mod.InfraGraph(infra)
+    guard = guard or NarrativeGuard()
+    verdicts: list[Verdict] = []
+
+    for finding in findings:
+        verdict, guard_reason = _scan_one(solver, finding, nemotron, tavily, guard, source)
         if verdict.decision == "dismissed" and dismissal_log is not None:
             dismissal_log.append({
                 "finding_id": verdict.finding_id,
-                "cve_id": cve_id,
-                "host": host,
+                "cve_id": verdict.cve_id,
+                "host": verdict.host,
                 "port": verdict.port,
                 "protocol": verdict.protocol,
                 "decision": "dismissed",
                 "reason": verdict.reason,
                 "guard": guard_reason,
-                "kev_listed": intel.get("kev_listed"),
-                "weaponized": intel.get("weaponized"),
+                "kev_listed": verdict.exploitability.get("kev_listed"),
+                "weaponized": verdict.exploitability.get("weaponized"),
             })
         verdicts.append(verdict)
 
