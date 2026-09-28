@@ -1,1 +1,66 @@
-{"CVE-2026-31007":{"auth_required":false,"confidence":0.93,"narrative_claim":"exposed","network_vector":"NETWORK","payload_constraints":"Unauthenticated HTTPS POST to /admin/render with a template-injection payload.","port":8443,"protocol":"TCP"},"CVE-2026-42424":{"auth_required":false,"confidence":0.92,"narrative_claim":"isolated","network_vector":"NETWORK","payload_constraints":"Unauthenticated HTTP GET to the logging endpoint with a crafted JNDI lookup string in a header value.","port":8080,"protocol":"TCP"},"CVE-2026-55501":{"auth_required":false,"confidence":0.87,"narrative_claim":"isolated","network_vector":"ADJACENT","payload_constraints":"Crafted serialized object sent over the cache binary protocol; no authentication.","port":6379,"protocol":"TCP"},"CVE-2026-61017":{"auth_required":false,"confidence":0.85,"narrative_claim":"isolated","network_vector":"ADJACENT","payload_constraints":"AMQP connection with empty credentials bypasses authentication; management frames then accepted.","port":5672,"protocol":"TCP"},"CVE-2026-72028":{"auth_required":false,"confidence":0.88,"narrative_claim":"isolated","network_vector":"ADJACENT","payload_constraints":"Malformed replication handshake packet before authentication completes.","port":5432,"protocol":"TCP"},"CVE-2026-81031":{"auth_required":false,"confidence":0.9,"narrative_claim":"isolated","network_vector":"NETWORK","payload_constraints":"Pre-authentication SSH handshake with a malformed key-exchange packet.","port":22,"protocol":"TCP"},"CVE-2026-91012":{"auth_required":false,"confidence":0.89,"narrative_claim":"isolated","network_vector":"NETWORK","payload_constraints":"Unauthenticated HTTP POST to /debug/exec with a command payload.","port":9100,"protocol":"TCP"},"_comment":"Recorded Nemotron precondition-extraction responses used in offline/stub mode. Keyed by CVE ID. All CVE IDs are synthetic."}
+{
+ "CVE-2026-31007": {
+  "port": 8443,
+  "protocol": "TCP",
+  "auth_required": false,
+  "network_vector": "NETWORK",
+  "payload_constraints": "A malicious template injection payload must be submitted to the admin API endpoint to trigger remote code execution.",
+  "confidence": 0.96,
+  "narrative_claim": "exposed"
+ },
+ "CVE-2026-42424": {
+  "port": 8080,
+  "protocol": "TCP",
+  "auth_required": false,
+  "network_vector": "NETWORK",
+  "payload_constraints": "A crafted query packet sent over TCP to port 8080 triggers the vulnerability.",
+  "confidence": 0.95,
+  "narrative_claim": "exposed"
+ },
+ "CVE-2026-55501": {
+  "port": 6379,
+  "protocol": "TCP",
+  "auth_required": false,
+  "network_vector": "NETWORK",
+  "payload_constraints": "A crafted serialized object must be sent to trigger deserialization.",
+  "confidence": 0.95,
+  "narrative_claim": "exposed"
+ },
+ "CVE-2026-61017": {
+  "port": 5672,
+  "protocol": "TCP",
+  "auth_required": false,
+  "network_vector": "NETWORK",
+  "payload_constraints": "Unauthenticated management commands can be sent via AMQP without credentials.",
+  "confidence": 0.95,
+  "narrative_claim": "exposed"
+ },
+ "CVE-2026-72028": {
+  "port": 5432,
+  "protocol": "TCP",
+  "auth_required": true,
+  "network_vector": "NETWORK",
+  "payload_constraints": "A malformed replication handshake message sent over TCP 5432 can trigger arbitrary code execution in the database process.",
+  "confidence": 0.95,
+  "narrative_claim": "exposed"
+ },
+ "CVE-2026-81031": {
+  "port": 22,
+  "protocol": "TCP",
+  "auth_required": false,
+  "network_vector": "NETWORK",
+  "payload_constraints": "Unauthenticated remote code execution via SSH on port 22.",
+  "confidence": 0.99,
+  "narrative_claim": "exposed"
+ },
+ "CVE-2026-91012": {
+  "port": 9100,
+  "protocol": "TCP",
+  "auth_required": false,
+  "network_vector": "NETWORK",
+  "payload_constraints": "Unauthenticated command execution payloads over HTTP.",
+  "confidence": 0.95,
+  "narrative_claim": "exposed"
+ },
+ "_comment": "Live Nemotron extractions via Nebius Token Factory (re-recorded; replaces hand-written stubs)."
+}

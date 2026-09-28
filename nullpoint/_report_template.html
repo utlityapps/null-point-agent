@@ -344,7 +344,7 @@ function renderTrace(fid){
     '<p>' + esc(v.reason) + '</p>' +
     '<p class="guardnote">Narrative guard: ' +
     (v.guard_passed ? "LLM claim agrees with solver \u2014 check passed."
-      : "claim blocked or routed to human review \u2014 fail closed.") + '</p></div></div>';
+      : "LLM claim blocked \u2014 logged as a caught model error; the solver's verdict stands.") + '</p></div></div>';
   document.getElementById("traceView").innerHTML =
     '<div class="panels">' + proposes + proves + decides + '</div>';
 }

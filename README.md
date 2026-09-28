@@ -18,7 +18,10 @@ Hackathon** (Best Apps & Agents track). Instead of dumping hundreds of
    unreachable ones are dismissed into a tamper-evident, hash-chained log.
 
 A fail-closed **narrative guard** blocks any LLM exposure claim the solver
-disagrees with. Numbers never pass through the LLM.
+disagrees with. The solver always wins: a blocked claim is logged as a
+caught model error, but it never overrides the solver's verdict — neither
+to suppress a real ticket nor to veto a proof. Numbers never pass through
+the LLM.
 
 ```
 [ NVIDIA Nemotron ] ──> exploit preconditions (port, protocol, auth, payload)
@@ -59,7 +62,7 @@ assets, no server, no extra dependencies) with the two product surfaces:
    weaponization intel, next to every dismissed alert expandable to its
    falsification trace and tamper-evident log entry.
 
-The report opens on the refusal moment: the Log4j-style Critical on the
+The report opens on the refusal moment: the pre-auth RCE Critical on the
 internal analytics cluster is refused (Zero Exposure) while the single
 genuinely exposed edge gateway becomes the one ticket.
 
@@ -77,6 +80,30 @@ Keys are read from the environment only. They are never written to disk,
 never logged, and never committed — see `.gitignore` and
 `tests/test_offline.py`.
 
+## Real AWS infrastructure (read-only importer)
+
+`nullpoint/aws_import.py` converts read-only `aws ec2 describe-*` JSON into
+the `infra.json` format the solver reads. Nothing is modified in your
+account:
+
+```bash
+aws ec2 describe-security-groups    > sgs.json
+aws ec2 describe-network-acls      > nacls.json
+aws ec2 describe-route-tables      > rtbs.json
+aws ec2 describe-instances         > instances.json
+aws ec2 describe-subnets           > subnets.json
+aws ec2 describe-vpcs              > vpcs.json
+aws ec2 describe-internet-gateways > igws.json
+python -m nullpoint.aws_import --sgs sgs.json --nacls nacls.json \
+  --rtbs rtbs.json --instances instances.json --subnets subnets.json \
+  --vpcs vpcs.json --igws igws.json -o infra.json
+```
+
+Instance services (which ports the solver tests) come from an optional
+`nullpoint:services` tag, e.g. `8080/TCP:analytics-app,9100/TCP`.
+ELBv2 load balancers are supported via an optional `--elbv2` bundle —
+see `python -m nullpoint.aws_import --help`.
+
 ## Layout
 
 ```
@@ -87,6 +114,7 @@ nullpoint/
   guard.py          fail-closed narrative guard (LLM claim vs solver)
   dismissal_log.py  append-only hash-chained JSONL dismissal log
   scanner.py        pipeline: propose -> prove -> decide
+  aws_import.py     read-only AWS describe-* -> infra.json importer
   cli.py            demo CLI (`scan` command)
   report.py         dual-surface UI generator (`python -m nullpoint.report --offline`)
   _report_template.html

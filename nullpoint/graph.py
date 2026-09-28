@@ -48,7 +48,10 @@ def cidr_covers(rule_cidr: str, src: str) -> bool:
     """True when ``rule_cidr`` covers ``src`` (``src`` may be a CIDR or IP)."""
     try:
         return _as_net(rule_cidr).supernet_of(_as_net(src))
-    except ValueError:
+    except (ValueError, TypeError):
+        # ValueError: unparseable CIDR. TypeError: mixed IP versions, e.g.
+        # an IPv6 ::/0 rule tested against an IPv4 source — not a crash,
+        # just "does not cover".
         return False
 
 

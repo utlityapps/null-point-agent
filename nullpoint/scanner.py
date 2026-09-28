@@ -7,9 +7,13 @@ Pipeline per finding:
 3. The deterministic graph solver computes boolean reachability from the
    internet to (host, port, protocol).
 4. The narrative guard fail-closed checks the LLM's exposure claim against
-   the solver. A blocked claim routes the finding to human review — it is
-   never silently dismissed or escalated.
-5. Reachable  -> "actionable" (ranked queue).
+   the solver. The solver always wins: a blocked claim is logged as a caught
+   model error, but it never overrides the solver's verdict — a blocked
+   claim is never silently acted on, and never vetoes a proof.
+5. Data-plane payloads (log/header/queue-borne) cannot be falsified by a
+   network reachability proof, so they route to human review, never to
+   "dismissed".
+6. Reachable  -> "actionable" (ranked queue).
    Unreachable -> "dismissed" (tamper-evident dismissal log entry).
 """
 from __future__ import annotations
@@ -20,6 +24,28 @@ from .guard import NarrativeGuard
 from .models import Verdict
 from .nemotron import NemotronClient
 from .tavily import TavilyClient
+
+
+# Payload hints that the exploit travels via the data plane (log pipeline,
+# HTTP headers, message queues) rather than a direct network connection.
+# The reachability solver only models L3/L4 network paths, so it cannot
+# prove non-exposure for these — e.g. Log4Shell reached internal systems
+# through logged JNDI strings, not through direct connections. Findings
+# with data-plane payloads route to human review, never to "dismissed".
+_DATA_PLANE_HINTS = (
+    "log message",
+    "header value",
+    "message queue",
+    "log pipeline",
+    "syslog",
+    "jndi lookup",
+)
+
+
+def payload_via_data_plane(payload_constraints: str | None) -> bool:
+    """True when the exploit payload travels via the data plane."""
+    pc = (payload_constraints or "").lower()
+    return any(h in pc for h in _DATA_PLANE_HINTS)
 
 
 def run_scan(
@@ -63,9 +89,12 @@ def run_scan(
                 "narrative_claim": pre.narrative_claim,
             },
         )
-        if not allowed:
+        if payload_via_data_plane(pre.payload_constraints):
             verdict.decision = "needs-review"
-            verdict.reason = guard_reason
+            verdict.reason = (
+                "payload travels via data plane (log/header/queue); "
+                "network reachability proof cannot establish non-exposure"
+            )
         elif reachable:
             verdict.decision = "actionable"
             verdict.reason = (
@@ -75,19 +104,27 @@ def run_scan(
         else:
             verdict.decision = "dismissed"
             verdict.reason = solver.summarize_denial(trace)
-            if dismissal_log is not None:
-                dismissal_log.append({
-                    "finding_id": verdict.finding_id,
-                    "cve_id": cve_id,
-                    "host": host,
-                    "port": pre.port,
-                    "protocol": pre.protocol,
-                    "decision": "dismissed",
-                    "reason": verdict.reason,
-                    "guard": guard_reason,
-                    "kev_listed": intel.get("kev_listed"),
-                    "weaponized": intel.get("weaponized"),
-                })
+        if not allowed:
+            # The solver always wins: a blocked narrative claim is recorded
+            # as a caught model error, but it never overrides the solver's
+            # verdict — neither to suppress a real ticket nor to veto a proof.
+            verdict.reason += (
+                f" | narrative guard blocked LLM claim ({guard_reason}); "
+                "solver's verdict stands"
+            )
+        if verdict.decision == "dismissed" and dismissal_log is not None:
+            dismissal_log.append({
+                "finding_id": verdict.finding_id,
+                "cve_id": cve_id,
+                "host": host,
+                "port": pre.port,
+                "protocol": pre.protocol,
+                "decision": "dismissed",
+                "reason": verdict.reason,
+                "guard": guard_reason,
+                "kev_listed": intel.get("kev_listed"),
+                "weaponized": intel.get("weaponized"),
+            })
         verdicts.append(verdict)
 
     actionable = [v for v in verdicts if v.decision == "actionable"]

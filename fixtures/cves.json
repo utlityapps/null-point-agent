@@ -1,1 +1,115 @@
-{"_comment":"Scanner-style CVE findings fixture. 11 Critical findings across the fleet; only F-011 is internet-reachable. All CVE IDs are synthetic.","findings":[{"cve_id":"CVE-2026-42424","description":"Unauthenticated remote code execution via crafted log message. Requires exposed TCP port 8080 and unauthenticated HTTP GET requests to the logging endpoint.","host":"i-analytics-1","id":"F-001","port":8080,"protocol":"TCP","severity":"Critical","title":"Remote code execution in analytics logging agent (Log4j-style JNDI injection)"},{"cve_id":"CVE-2026-42424","description":"Unauthenticated remote code execution via crafted log message. Requires exposed TCP port 8080 and unauthenticated HTTP GET requests to the logging endpoint.","host":"i-analytics-2","id":"F-002","port":8080,"protocol":"TCP","severity":"Critical","title":"Remote code execution in analytics logging agent (Log4j-style JNDI injection)"},{"cve_id":"CVE-2026-42424","description":"Unauthenticated remote code execution via crafted log message. Requires exposed TCP port 8080 and unauthenticated HTTP GET requests to the logging endpoint.","host":"i-analytics-3","id":"F-003","port":8080,"protocol":"TCP","severity":"Critical","title":"Remote code execution in analytics logging agent (Log4j-style JNDI injection)"},{"cve_id":"CVE-2026-91012","description":"Debug endpoint on TCP 9100 accepts unauthenticated command execution payloads over HTTP.","host":"i-analytics-1","id":"F-004","port":9100,"protocol":"TCP","severity":"Critical","title":"Unauthenticated RCE in metrics exporter debug endpoint"},{"cve_id":"CVE-2026-91012","description":"Debug endpoint on TCP 9100 accepts unauthenticated command execution payloads over HTTP.","host":"i-analytics-2","id":"F-005","port":9100,"protocol":"TCP","severity":"Critical","title":"Unauthenticated RCE in metrics exporter debug endpoint"},{"cve_id":"CVE-2026-91012","description":"Debug endpoint on TCP 9100 accepts unauthenticated command execution payloads over HTTP.","host":"i-analytics-3","id":"F-006","port":9100,"protocol":"TCP","severity":"Critical","title":"Unauthenticated RCE in metrics exporter debug endpoint"},{"cve_id":"CVE-2026-55501","description":"Crafted payload to TCP 6379 triggers deserialization leading to remote code execution. No authentication on the cache protocol.","host":"i-cache-1","id":"F-007","port":6379,"protocol":"TCP","severity":"Critical","title":"Deserialization RCE in cache service"},{"cve_id":"CVE-2026-61017","description":"Authentication bypass on the AMQP listener (TCP 5672) allows unauthenticated management commands.","host":"i-queue-1","id":"F-008","port":5672,"protocol":"TCP","severity":"Critical","title":"AMQP authentication bypass leading to RCE"},{"cve_id":"CVE-2026-81031","description":"Pre-authentication vulnerability in SSH daemon on TCP 22 permitting remote code execution.","host":"i-bastion-1","id":"F-009","port":22,"protocol":"TCP","severity":"Critical","title":"SSH pre-authentication RCE"},{"cve_id":"CVE-2026-72028","description":"Malformed replication handshake on TCP 5432 can execute code in the database process context.","host":"i-db-1","id":"F-010","port":5432,"protocol":"TCP","severity":"Critical","title":"Database replication stream RCE"},{"cve_id":"CVE-2026-31007","description":"Unauthenticated template injection in the edge gateway admin API on TCP 8443 allows remote code execution over HTTPS.","host":"i-gateway-1","id":"F-011","port":8443,"protocol":"TCP","severity":"Critical","title":"RCE in edge gateway admin API"}]}
+{
+ "_comment": "Scanner-style CVE findings fixture. 11 Critical findings across the fleet; only F-011 is internet-reachable. All CVE IDs are synthetic.",
+ "findings": [
+  {
+   "cve_id": "CVE-2026-42424",
+   "description": "Pre-authentication remote code execution in the analytics query API (TCP 8080). An unauthenticated attacker with a direct network path to the service port can execute arbitrary code via a crafted query packet. No credentials, no prior access, no log/header indirection \u2014 exploitation requires a complete TCP path from the attacker to the service.",
+   "host": "i-analytics-1",
+   "id": "F-001",
+   "port": 8080,
+   "protocol": "TCP",
+   "severity": "Critical",
+   "title": "Remote code execution in analytics logging agent (Log4j-style JNDI injection)"
+  },
+  {
+   "cve_id": "CVE-2026-42424",
+   "description": "Pre-authentication remote code execution in the analytics query API (TCP 8080). An unauthenticated attacker with a direct network path to the service port can execute arbitrary code via a crafted query packet. No credentials, no prior access, no log/header indirection \u2014 exploitation requires a complete TCP path from the attacker to the service.",
+   "host": "i-analytics-2",
+   "id": "F-002",
+   "port": 8080,
+   "protocol": "TCP",
+   "severity": "Critical",
+   "title": "Remote code execution in analytics logging agent (Log4j-style JNDI injection)"
+  },
+  {
+   "cve_id": "CVE-2026-42424",
+   "description": "Pre-authentication remote code execution in the analytics query API (TCP 8080). An unauthenticated attacker with a direct network path to the service port can execute arbitrary code via a crafted query packet. No credentials, no prior access, no log/header indirection \u2014 exploitation requires a complete TCP path from the attacker to the service.",
+   "host": "i-analytics-3",
+   "id": "F-003",
+   "port": 8080,
+   "protocol": "TCP",
+   "severity": "Critical",
+   "title": "Remote code execution in analytics logging agent (Log4j-style JNDI injection)"
+  },
+  {
+   "cve_id": "CVE-2026-91012",
+   "description": "Debug endpoint on TCP 9100 accepts unauthenticated command execution payloads over HTTP.",
+   "host": "i-analytics-1",
+   "id": "F-004",
+   "port": 9100,
+   "protocol": "TCP",
+   "severity": "Critical",
+   "title": "Unauthenticated RCE in metrics exporter debug endpoint"
+  },
+  {
+   "cve_id": "CVE-2026-91012",
+   "description": "Debug endpoint on TCP 9100 accepts unauthenticated command execution payloads over HTTP.",
+   "host": "i-analytics-2",
+   "id": "F-005",
+   "port": 9100,
+   "protocol": "TCP",
+   "severity": "Critical",
+   "title": "Unauthenticated RCE in metrics exporter debug endpoint"
+  },
+  {
+   "cve_id": "CVE-2026-91012",
+   "description": "Debug endpoint on TCP 9100 accepts unauthenticated command execution payloads over HTTP.",
+   "host": "i-analytics-3",
+   "id": "F-006",
+   "port": 9100,
+   "protocol": "TCP",
+   "severity": "Critical",
+   "title": "Unauthenticated RCE in metrics exporter debug endpoint"
+  },
+  {
+   "cve_id": "CVE-2026-55501",
+   "description": "Crafted payload to TCP 6379 triggers deserialization leading to remote code execution. No authentication on the cache protocol.",
+   "host": "i-cache-1",
+   "id": "F-007",
+   "port": 6379,
+   "protocol": "TCP",
+   "severity": "Critical",
+   "title": "Deserialization RCE in cache service"
+  },
+  {
+   "cve_id": "CVE-2026-61017",
+   "description": "Authentication bypass on the AMQP listener (TCP 5672) allows unauthenticated management commands.",
+   "host": "i-queue-1",
+   "id": "F-008",
+   "port": 5672,
+   "protocol": "TCP",
+   "severity": "Critical",
+   "title": "AMQP authentication bypass leading to RCE"
+  },
+  {
+   "cve_id": "CVE-2026-81031",
+   "description": "Pre-authentication vulnerability in SSH daemon on TCP 22 permitting remote code execution.",
+   "host": "i-bastion-1",
+   "id": "F-009",
+   "port": 22,
+   "protocol": "TCP",
+   "severity": "Critical",
+   "title": "SSH pre-authentication RCE"
+  },
+  {
+   "cve_id": "CVE-2026-72028",
+   "description": "Malformed replication handshake on TCP 5432 can execute code in the database process context.",
+   "host": "i-db-1",
+   "id": "F-010",
+   "port": 5432,
+   "protocol": "TCP",
+   "severity": "Critical",
+   "title": "Database replication stream RCE"
+  },
+  {
+   "cve_id": "CVE-2026-31007",
+   "description": "Unauthenticated template injection in the edge gateway admin API on TCP 8443 allows remote code execution over HTTPS.",
+   "host": "i-gateway-1",
+   "id": "F-011",
+   "port": 8443,
+   "protocol": "TCP",
+   "severity": "Critical",
+   "title": "RCE in edge gateway admin API"
+  }
+ ]
+}

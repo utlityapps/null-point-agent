@@ -98,3 +98,12 @@ def test_unknown_host_is_unreachable(solver):
     reachable, trace = solver.check_reachability(graph_mod.INTERNET, "i-nope-1", 443, "TCP")
     assert reachable is False
     assert "unknown host" in solver.summarize_denial(trace)
+
+
+def test_cidr_covers_mixed_ip_versions_returns_false():
+    # IPv6 ::/0 tested against an IPv4 source must not crash (TypeError)
+    # and must not claim coverage.
+    from nullpoint.graph import cidr_covers
+    assert cidr_covers("::/0", "0.0.0.0/0") is False
+    assert cidr_covers("0.0.0.0/0", "::1") is False
+    assert cidr_covers("::/0", "::1") is True

@@ -1,7 +1,7 @@
 # HYPOTHESES.md — falsifiable claims behind NullPoint
 
-Per the winning playbook: plan 2–4 falsifiable hypotheses, document the
-killed ones with numbers. Status is updated as evidence lands.
+Status is updated as evidence lands. Killed hypotheses are recorded below
+with numbers; retracted claims stay visible.
 
 ## H1 — Most "Critical" CVEs are unreachable from untrusted networks
 
@@ -66,5 +66,25 @@ to Phase 2.
 
 ## Killed hypotheses
 
-None yet. This section is append-only: when a hypothesis fails, record the
+### K1 — Blocked narrative claims should route to human review (2026-09-27)
+
+**Claim:** when the narrative guard blocks an LLM exposure claim, the safe
+move is `needs-review`.
+
+**Evidence against:** the guard's own contract is "the solver always wins" —
+the solver's reachability proof is the evidence, and the LLM's
+text-only exposure guess carries zero information about the deployment
+(the live H3 run shows Nemotron answers "exposed" 20/20 from advisory text
+alone). Giving a zero-information guess veto power over a deterministic
+proof both contradicts the contract and destroys the product's value
+(10 of 11 findings would land in review instead of being dismissed).
+
+Worse, in the dangerous direction (LLM claims "isolated", solver proves
+reachable) the old routing would have *delayed a real ticket*.
+
+**What changed:** a blocked claim is now logged as a caught model error and
+the solver's verdict stands (`scanner.py`; `tests/test_guard.py`).
+Retracted: scanner docstring step 4 (old wording).
+
+None other yet. This section is append-only: when a hypothesis fails, record the
 numbers, what we learned, and what changed — retracted claims stay visible.
