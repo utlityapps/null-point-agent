@@ -90,7 +90,7 @@ def cmd_scan(args: argparse.Namespace) -> int:
         print(f"  - [{v.finding_id}] {v.cve_id} on {v.host}:{v.port} — {v.reason[:100]}")
 
     if report["needs_review"]:
-        print("\nNEEDS HUMAN REVIEW (payload delivery not falsifiable by network proof):")
+        print("\nNEEDS HUMAN REVIEW (could not prove non-exposure):")
         for v in report["needs_review"]:
             print(f"  ? [{v.finding_id}] {v.reason}")
 

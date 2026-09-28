@@ -14,9 +14,13 @@ Two input formats are accepted (auto-detected by :func:`load_findings`):
 
 Inspector2 notes (honest limitations, not gaps):
 
-- Only ``PACKAGE_VULNERABILITY`` findings with a real CVE ID are converted.
-  ``NETWORK_REACHABILITY`` findings ("Port 22 is reachable…") carry no CVE
-  and are skipped — converting one's title into a CVE ID would be garbage.
+- Only ``PACKAGE_VULNERABILITY`` findings are converted.
+  ``NETWORK_REACHABILITY`` findings ("Port 22 is reachable…") carry no
+  advisory ID and are skipped — converting one's title into a CVE ID would
+  be garbage.
+- Any non-empty advisory ID is kept (CVE *or* GHSA): GHSA-only findings are
+  not silently dropped. With no recorded extraction they fail closed to
+  human review, where an analyst can see them.
 - Package-vulnerability findings name the CVE
   (``packageVulnerabilityDetails.vulnerabilityId``) and the EC2 instance
   (``resources[0].id``) but carry **no port**. On hosts with no internet
@@ -31,10 +35,6 @@ from __future__ import annotations
 
 import json
 import pathlib
-import re
-
-#: A real CVE ID. Anything else (titles, ARNs, "Port") is not converted.
-_CVE_RE = re.compile(r"^CVE-\d{4}-\d+$", re.IGNORECASE)
 
 
 def is_inspector2_doc(doc: dict) -> bool:
@@ -49,9 +49,10 @@ def is_inspector2_doc(doc: dict) -> bool:
 def inspector2_to_findings(doc: dict) -> list[dict]:
     """Convert ``aws inspector2 list-findings`` JSON to NullPoint findings.
 
-    Only ``PACKAGE_VULNERABILITY`` findings with a real CVE ID are kept;
-    network-reachability findings and non-CVE entries are skipped, not
-    coerced.
+    Only ``PACKAGE_VULNERABILITY`` findings with a non-empty advisory ID
+    are kept; network-reachability findings and ID-less entries are skipped,
+    not coerced. GHSA (and other non-CVE) IDs are kept as-is: they are real
+    advisories, and dropping them would hide findings from the analyst.
     """
     out = []
     n = 0
@@ -61,8 +62,8 @@ def inspector2_to_findings(doc: dict) -> list[dict]:
             # nothing for the precondition extractor to work with.
             continue
         pv = f.get("packageVulnerabilityDetails") or {}
-        cve_id = str(pv.get("vulnerabilityId") or "").strip()
-        if not _CVE_RE.match(cve_id):
+        vuln_id = str(pv.get("vulnerabilityId") or "").strip()
+        if not vuln_id:
             continue
         n += 1
         host = "unknown"
@@ -75,7 +76,7 @@ def inspector2_to_findings(doc: dict) -> list[dict]:
                 break
         out.append({
             "id": f"INSP-{n:03d}",
-            "cve_id": cve_id,
+            "cve_id": vuln_id,  # advisory ID: CVE, GHSA, or vendor ID
             "title": f.get("title", ""),
             "description": f.get("description", ""),
             "host": host,

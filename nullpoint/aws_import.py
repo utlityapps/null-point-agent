@@ -170,36 +170,158 @@ def import_internet_gateways(doc: dict) -> list[dict]:
     return out
 
 
-def import_elbv2(bundle: dict) -> list[dict]:
-    """Optional ELBv2 bundle: {"load_balancers": [...], "listeners": [...],
-    "target_groups": [...], "targets": {tg_arn: [{"Id": ...}]}}."""
-    tg_port = {tg["TargetGroupArn"]: tg.get("Port")
-               for tg in bundle.get("target_groups", [])}
+def _forward_targets(tg_arns: list[str], tg_by_arn: dict, targets_by_tg: dict,
+                     ip_to_instance: dict, gaps: list, lb_id: str) -> list[str]:
+    """Resolve target-group ARNs to instance IDs, recording a coverage gap
+    for anything the solver cannot model. Returns the resolved instance IDs."""
+    resolved: list[str] = []
+    for tg_arn in tg_arns:
+        if not tg_arn:
+            continue
+        tg = tg_by_arn.get(tg_arn, {})
+        ttype = str(tg.get("TargetType", "instance")).lower()
+        for t in targets_by_tg.get(tg_arn, []):
+            tid = t.get("Id")
+            if not tid:
+                continue
+            if ttype == "instance":
+                resolved.append(tid)
+            elif ttype == "ip":
+                iid = ip_to_instance.get(tid)
+                if iid:
+                    resolved.append(iid)  # parse what we can
+                else:
+                    gaps.append({
+                        "code": "alb-target-ip-unresolved", "node": lb_id,
+                        "detail": f"IP-type target {tid} matches no known instance",
+                    })
+            else:
+                gaps.append({
+                    "code": f"alb-target-type-{ttype}", "node": lb_id,
+                    "detail": f"target group {tg_arn} has unmodeled target type {ttype!r}",
+                })
+    return resolved
+
+
+def _parse_actions(actions: list[dict], tg_by_arn: dict, targets_by_tg: dict,
+                   ip_to_instance: dict, gaps: list, lb_id: str,
+                   where: str) -> tuple[list[str], str | None]:
+    """Parse ELBv2 actions into (instance targets, first target-group ARN).
+
+    Iterates ALL actions (the old code read only DefaultActions[0], so an
+    auth action first silently dropped the forward). Auth actions are
+    recorded as gaps; weighted forwards are parsed AND gapped.
+    """
+    tg_arns: list[str] = []
+    for action in actions or []:
+        atype = str(action.get("Type", "")).lower()
+        if atype == "forward":
+            if action.get("TargetGroupArn"):
+                tg_arns.append(action["TargetGroupArn"])
+            fc = action.get("ForwardConfig") or {}
+            ftgs = fc.get("TargetGroups", [])
+            if len(ftgs) > 1:
+                gaps.append({
+                    "code": "alb-weighted-forward", "node": lb_id,
+                    "detail": f"{where}: weighted ForwardConfig across "
+                              f"{len(ftgs)} target groups; all parsed, weights unevaluated",
+                })
+            for fwd in ftgs:
+                if fwd.get("TargetGroupArn"):
+                    tg_arns.append(fwd["TargetGroupArn"])
+        elif atype in ("authenticate-oidc", "authenticate-cognito"):
+            gaps.append({
+                "code": "alb-auth-action", "node": lb_id,
+                "detail": f"{where}: {atype} action gates traffic (parsed, auth not modeled)",
+            })
+        # redirect / fixed-response: terminal, nothing forwarded — no gap.
+    targets = _forward_targets(tg_arns, tg_by_arn, targets_by_tg,
+                               ip_to_instance, gaps, lb_id)
+    return targets, (tg_arns[0] if tg_arns else None)
+
+
+def _parse_listener(actions: list[dict], tg_by_arn: dict, targets_by_tg: dict,
+                    ip_to_instance: dict, gaps: list, lb_id: str,
+                    where: str) -> tuple[list[str], str | None]:
+    """Parse one listener's (or rule's) actions; see _parse_actions."""
+    return _parse_actions(actions, tg_by_arn, targets_by_tg,
+                          ip_to_instance, gaps, lb_id, where)
+
+
+def import_elbv2(bundle: dict, ip_to_instance: dict | None = None
+                 ) -> tuple[list[dict], list[dict]]:
+    """Optional ELBv2 bundle -> (load_balancers, coverage_gaps).
+
+    Bundle shape: {"load_balancers": [...], "listeners": [...],
+    "target_groups": [...], "targets": {tg_arn: [{"Id": ...}]},
+    "rules": [{"ListenerArn": ..., "IsDefault": ..., "Actions": [...]}]}
+    (rules optional; from describe-rules).
+
+    Anything the solver cannot model is recorded as a coverage gap instead
+    of being silently dropped: auth actions, weighted forwards, non-instance
+    target types, unevaluated listener rules. Gaps only ever weaken
+    dismissals (findings go to review), never actionability.
+    """
+    ip_to_instance = ip_to_instance or {}
+    tg_by_arn = {tg["TargetGroupArn"]: tg for tg in bundle.get("target_groups", [])}
+    targets_by_tg = bundle.get("targets", {})
     listeners_by_lb: dict[str, list[dict]] = {}
     for lst in bundle.get("listeners", []):
         listeners_by_lb.setdefault(lst["LoadBalancerArn"], []).append(lst)
+    rules_by_listener: dict[str, list[dict]] = {}
+    for rule in bundle.get("rules", []):
+        if not rule.get("IsDefault"):
+            rules_by_listener.setdefault(rule.get("ListenerArn"), []).append(rule)
+
+    gaps: list[dict] = []
     out = []
     for lb in bundle.get("load_balancers", []):
+        lb_id = lb.get("LoadBalancerName", lb["LoadBalancerArn"])
+        lb_arn = lb["LoadBalancerArn"]
         listeners = []
-        for lst in listeners_by_lb.get(lb["LoadBalancerArn"], []):
-            actions = lst.get("DefaultActions", [])
-            tg_arn = actions[0].get("TargetGroupArn") if actions else None
-            targets = [t["Id"] for t in bundle.get("targets", {}).get(tg_arn, [])]
+        lb_targets: set[str] = set()
+        lb_gap_idx = len(gaps)
+        for lst in listeners_by_lb.get(lb_arn, []):
+            where = f"listener {lst.get('Port')}/{lst.get('Protocol')}"
+            targets, first_tg = _parse_listener(lst.get("DefaultActions", []),
+                                                tg_by_arn, targets_by_tg,
+                                                ip_to_instance, gaps,
+                                                lb_id, where)
+            for rule in rules_by_listener.get(lst.get("ListenerArn"), []):
+                # Rule conditions (host/path) can't be evaluated by the
+                # solver, but the rule's forward targets are still parsed so
+                # the gap scope is precise.
+                rt, _ = _parse_listener(rule.get("Actions", []), tg_by_arn,
+                                        targets_by_tg, ip_to_instance,
+                                        gaps, lb_id, where + " rule")
+                targets.extend(rt)
+                gaps.append({
+                    "code": "alb-listener-rules", "node": lb_id,
+                    "detail": f"{where}: non-default listener rules exist; "
+                              "routing conditions unevaluated",
+                })
+            tport = tg_by_arn.get(first_tg, {}).get("Port") if first_tg else None
             listeners.append({
                 "port": lst["Port"],
                 "protocol": str(lst.get("Protocol", "TCP")).upper(),
-                "target_port": tg_port.get(tg_arn, lst["Port"]),
-                "targets": targets,
+                "target_port": tport or lst["Port"],
+                "targets": sorted(set(targets)),
             })
+            lb_targets.update(targets)
+        # Scope this LB's gaps to every instance it forwards to. If forwarding
+        # is entirely unresolvable (e.g. all IP targets unmatched), fall back
+        # to VPC-wide scoping via the caller (see build_infra).
+        for g in gaps[lb_gap_idx:]:
+            g.setdefault("affects", sorted(lb_targets))
         out.append({
-            "id": lb.get("LoadBalancerName", lb["LoadBalancerArn"]),
+            "id": lb_id,
             "scheme": lb.get("Scheme", "internal"),
             "security_groups": lb.get("SecurityGroups", []),
             "subnets": [az["SubnetId"] for az in lb.get("AvailabilityZones", [])
                         if az.get("SubnetId")],
             "listeners": listeners,
         })
-    return out
+    return out, gaps
 
 
 COLLECTOR = """\
@@ -210,10 +332,34 @@ aws ec2 describe-instances         > instances.json
 aws ec2 describe-subnets           > subnets.json
 aws ec2 describe-vpcs              > vpcs.json
 aws ec2 describe-internet-gateways > igws.json
-# ELBv2 (optional): assemble {"load_balancers","listeners","target_groups","targets"}
-# from describe-load-balancers / describe-listeners / describe-target-groups /
-# describe-target-health, then pass it with --elbv2.
+# ELBv2 (optional): assemble {"load_balancers","listeners","target_groups",
+# "targets","rules"} from describe-load-balancers / describe-listeners /
+# describe-target-groups / describe-target-health / describe-rules, then pass
+# it with --elbv2.
 """
+
+
+def _ipv6_route_gaps(infra: dict) -> list[dict]:
+    """Route tables with IPv6 routes (e.g. ::/0) are a coverage gap: the
+    solver only models IPv4, so hosts in those subnets might be reachable
+    over IPv6 in ways the proof cannot see. Fails closed to review."""
+    insts_by_subnet: dict[str, list[str]] = {}
+    for inst in infra["instances"]:
+        insts_by_subnet.setdefault(inst.get("subnet"), []).append(inst["id"])
+    gaps = []
+    for rtb in infra["route_tables"]:
+        v6 = [r["cidr"] for r in rtb["routes"]
+              if r.get("cidr") and ":" in str(r["cidr"])]
+        if not v6:
+            continue
+        affects = sorted({iid for sid in rtb["subnet_ids"]
+                          for iid in insts_by_subnet.get(sid, [])})
+        gaps.append({
+            "code": "ipv6-route", "node": rtb["id"], "affects": affects,
+            "detail": f"route table {rtb['id']} has IPv6 route(s) "
+                      f"{', '.join(v6)}; IPv6 is not modeled",
+        })
+    return gaps
 
 
 def build_infra(files: dict) -> dict:
@@ -229,10 +375,33 @@ def build_infra(files: dict) -> dict:
         "subnets": import_subnets(_load(files["subnets"])),
         "transit_gateways": [],
         "vpcs": import_vpcs(_load(files["vpcs"])),
+        "coverage_gaps": [],
     }
     if files.get("elbv2"):
-        infra["load_balancers"] = import_elbv2(_load(files["elbv2"]))
+        # Map IP-type target IPs back to known instances ("parse what we
+        # can"); anything left unresolved becomes a coverage gap.
+        ip_to_instance = {i["private_ip"]: i["id"] for i in infra["instances"]
+                          if i.get("private_ip")}
+        lbs, gaps = import_elbv2(_load(files["elbv2"]), ip_to_instance)
+        infra["load_balancers"] = lbs
+        infra["coverage_gaps"].extend(gaps)
+        # Gaps whose forwarding is entirely unresolvable (no known instance
+        # targets) are scoped VPC-wide: any host in the ALB's VPC might be
+        # the unseen target, so no dismissal proof there is sound.
+        vpc_by_subnet = {s["id"]: s.get("vpc") for s in infra["subnets"]}
+        insts_by_vpc: dict[str, list[str]] = {}
+        for inst in infra["instances"]:
+            insts_by_vpc.setdefault(vpc_by_subnet.get(inst.get("subnet")), []).append(inst["id"])
+        for lb, raw in zip(lbs, _load(files["elbv2"]).get("load_balancers", [])):
+            vpcs = {vpc_by_subnet.get(az.get("SubnetId"))
+                    for az in raw.get("AvailabilityZones", [])}
+            for g in gaps:
+                if g.get("node") == lb["id"] and not g.get("affects"):
+                    for vpc in vpcs:
+                        g["affects"] = sorted(
+                            set(g.get("affects", [])) | set(insts_by_vpc.get(vpc, [])))
     _apply_main_route_tables(infra)
+    infra["coverage_gaps"].extend(_ipv6_route_gaps(infra))
     return infra
 
 

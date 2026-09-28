@@ -63,6 +63,12 @@ def _note_blocked_claim(verdict: Verdict, narrative_claim: str,
     )
 
 
+def _gap_reason(host: str, gaps: list[dict]) -> str:
+    codes = ", ".join(sorted({g.get("code", "?") for g in gaps}))
+    return (f"the network model has coverage gap(s) affecting {host} ({codes}) — "
+            "cannot prove non-exposure; failing closed to human review")
+
+
 def _scan_one(
     solver: graph_mod.InfraGraph,
     finding: dict,
@@ -134,7 +140,14 @@ def _scan_one(
         verdict.trace = trace
         allowed, guard_reason = guard.check(cve_id, host, pre.narrative_claim, False)
         verdict.guard_passed = allowed
-        if pre.delivery == "direct":
+        gaps = solver.coverage_gaps_for(host)
+        if gaps:
+            # The "no path on any port" proof is unsound when the model
+            # cannot see part of the network (auth actions, weighted
+            # forwards, IP targets, unevaluated rules, IPv6 routes).
+            verdict.decision = "needs-review"
+            verdict.reason = _gap_reason(host, gaps)
+        elif pre.delivery == "direct":
             verdict.decision = "dismissed"
             verdict.reason = (
                 f"no network path from {source} to {host} on any port — the "
@@ -187,6 +200,20 @@ def _scan_one(
                     f"reachable from {source}; "
                     f"KEV-listed={intel.get('kev_listed')}, weaponized={intel.get('weaponized')}"
                 )
+            elif solver.coverage_gaps_for(host):
+                verdict.decision = "needs-review"
+                verdict.reason = _gap_reason(host, solver.coverage_gaps_for(host))
+            elif observed_port is None:
+                # No observed port and the model's guessed port is
+                # unreachable: trusting the guess would dismiss the finding
+                # on the model's word alone — the failure this product
+                # exists to prevent. There is nothing proven either way.
+                verdict.decision = "needs-review"
+                verdict.reason = (
+                    f"no observed port; only the model's guessed port "
+                    f"{pre.port}/{pre.protocol} was tested and it is unreachable — "
+                    "failing closed to human review"
+                )
             elif pre.delivery != "direct":
                 # The solver found no network path, but the payload may arrive
                 # via the data plane (logs, headers, queues) — a network proof
@@ -220,7 +247,23 @@ def run_scan(
     verdicts: list[Verdict] = []
 
     for finding in findings:
-        verdict, guard_reason = _scan_one(solver, finding, nemotron, tavily, guard, source)
+        try:
+            verdict, guard_reason = _scan_one(solver, finding, nemotron, tavily, guard, source)
+        except Exception as exc:  # noqa: BLE001 — malformed findings never crash the scan
+            # The inner try in _scan_one only wraps the API calls; anything
+            # else (missing host, a port like "8443/tcp") lands here and
+            # fails closed to human review instead of aborting the scan.
+            fid = finding.get("id", "?") if isinstance(finding, dict) else "?"
+            cve = finding.get("cve_id", "?") if isinstance(finding, dict) else "?"
+            host = finding.get("host", "?") if isinstance(finding, dict) else "?"
+            verdict = Verdict(
+                finding_id=str(fid), cve_id=str(cve), host=str(host),
+                port=0, protocol="TCP", reachable=False, guard_passed=True,
+                decision="needs-review",
+                reason=(f"malformed finding ({type(exc).__name__}: {exc}) — "
+                        "failing closed to human review"),
+            )
+            guard_reason = ""
         if verdict.decision == "dismissed" and dismissal_log is not None:
             dismissal_log.append({
                 "finding_id": verdict.finding_id,

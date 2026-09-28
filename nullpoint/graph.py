@@ -60,7 +60,11 @@ def any_cidr_covers(rule_cidr: str, srcs: list[str]) -> bool:
 
 
 def _proto_num(p) -> str:
-    return {"tcp": "6", "udp": "17", "icmp": "1"}.get(str(p).lower(), str(p).lower())
+    # ALB listener protocols are L7 names for L4 transports: HTTP/HTTPS/TLS
+    # all ride TCP. Without this mapping every app behind a real ALB (whose
+    # listeners are HTTP/HTTPS, never "TCP") reads as unreachable.
+    return {"tcp": "6", "udp": "17", "icmp": "1", "http": "6", "https": "6",
+            "tls": "6"}.get(str(p).lower(), str(p).lower())
 
 
 def proto_match(rule_proto, protocol: str) -> bool:
@@ -95,6 +99,16 @@ class InfraGraph:
 
         self.G = nx.DiGraph()
         self._build_topology()
+        # Coverage gaps: network constructs the importer saw but the solver
+        # cannot model (auth actions, weighted forwards, IP targets,
+        # unevaluated listener rules, IPv6 routes). Each gap names the hosts
+        # it affects; a dismissal proof covering those hosts is unsound, so
+        # the scanner fails them closed to human review instead.
+        self.coverage_gaps: list[dict] = list(infra.get("coverage_gaps", []))
+
+    def coverage_gaps_for(self, host: str) -> list[dict]:
+        """Coverage gaps affecting ``host`` (empty when the model is complete)."""
+        return [g for g in self.coverage_gaps if host in g.get("affects", [])]
 
     # ------------------------------------------------------------------
     # topology construction
@@ -267,11 +281,17 @@ class InfraGraph:
                                  "reason": "forward target port mismatch"})
                     return False, hops
                 alb, inst = self.albs[a], self.instances[b]
-                if not self.sg_allows(inst.get("security_groups"), None, alb.get("security_groups"), port, protocol):
+                alb_cidrs = [self.subnets[s]["cidr"] for s in alb.get("subnets", [])
+                             if s in self.subnets and self.subnets[s].get("cidr")]
+                # The ALB reaches the instance from an IP in its own subnets:
+                # the app SG may allow the ALB's SG *or* the VPC/subnet CIDR
+                # the ALB lives in. Checking only SG references dismissed
+                # every app whose SG allows the VPC CIDR instead.
+                if not self.sg_allows(inst.get("security_groups"), alb_cidrs,
+                                      alb.get("security_groups"), port, protocol):
                     hops.append({"hop": f"{a} -> {b}", "decision": "deny",
                                  "reason": f"{b} security groups do not allow {a} on {port}/{protocol}"})
                     return False, hops
-                alb_cidrs = [self.subnets[s]["cidr"] for s in alb.get("subnets", []) if s in self.subnets]
                 if not self.nacl_allows_subnets([inst["subnet"]], "ingress", alb_cidrs, port, protocol):
                     hops.append({"hop": f"{a} -> {b}", "decision": "deny",
                                  "reason": f"{b} subnet NACLs deny ALB subnets on {port}/{protocol}"})

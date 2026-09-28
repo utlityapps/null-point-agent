@@ -110,7 +110,18 @@ scanner finding's observed port — never from the model, never from the tag.
 are tested; if either proves reachable the finding is actionable. A wrong
 model port can only add a ticket, never dismiss one.)
 ELBv2 load balancers are supported via an optional `--elbv2` bundle —
-see `python -m nullpoint.aws_import --help`.
+see `python -m nullpoint.aws_import --help`. HTTPS/HTTP listeners are
+matched as TCP, and an app security group that allows the VPC CIDR (rather
+than the ALB's security group) is honored on the ALB→instance hop, so apps
+behind real ALBs are not misread as unreachable.
+
+Fail-closed coverage: anything the network model cannot see is recorded in
+`infra.json` as a `coverage_gaps` entry instead of being silently dropped —
+auth actions (Cognito/OIDC) before a forward, weighted forwards, IP-type or
+other non-instance targets, unevaluated listener rules, and IPv6 routes.
+Findings on gap-affected hosts are never dismissed; they go to human
+review. Gaps only ever weaken dismissals — a proven-reachable finding is
+still actionable.
 
 Scan the imported infrastructure directly:
 
@@ -187,7 +198,7 @@ HYPOTHESES.md       falsifiable hypotheses + status
 
 - Dual-surface UI: done (`python -m nullpoint.report --offline`).
 - Nebius live run: done — H3 scored 20/20 live on 2026-09-23.
-- Tavily live: verified 2026-09-27 (one-time key, since rotated); offline recordings cover the demo.
+- Tavily live: verified 2026-09-27 with a one-time key (transient use, never stored); offline recordings cover the demo.
 - Remaining: ≤3-min demo video, Devpost submission.
 - See `HYPOTHESES.md` for what is proven offline vs deferred to live runs.
 

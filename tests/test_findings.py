@@ -63,7 +63,7 @@ def _inspector2_doc():
                 "networkReachabilityDetails": {"openPortRange": {"begin": 22, "end": 22}},
             },
             {
-                # Package finding with a non-CVE ID — skipped, not coerced.
+                # Package finding with a GHSA ID — kept, not silently dropped.
                 "findingArn": "arn:aws:inspector2:us-east-1:123:finding/jkl",
                 "type": "PACKAGE_VULNERABILITY",
                 "title": "Some advisory without a CVE",
@@ -90,14 +90,18 @@ def test_detects_inspector2_output():
 
 def test_inspector2_conversion_maps_fields():
     out = inspector2_to_findings(_inspector2_doc())
-    # Only the two PACKAGE_VULNERABILITY findings with real CVE IDs survive:
-    # the NETWORK_REACHABILITY finding and the non-CVE advisory are skipped.
-    assert len(out) == 2
+    # The two PACKAGE_VULNERABILITY findings with CVE IDs survive, plus the
+    # GHSA-only finding (kept, not silently dropped); the
+    # NETWORK_REACHABILITY finding is skipped.
+    assert len(out) == 3
     f1 = out[0]
     assert f1["id"] == "INSP-001"
     assert f1["cve_id"] == "CVE-2026-31007"
     assert f1["host"] == "i-gateway-1"
     assert f1["severity"] == "CRITICAL"
+    ghsa = out[2]
+    assert ghsa["cve_id"] == "GHSA-xxxx-yyyy"
+    assert ghsa["host"] == "i-gateway-1"
     assert f1["port"] is None  # Inspector2 carries no port
     # Image finding: host falls back to "unknown" (scanner fails it closed).
     assert out[1]["host"] == "unknown"
@@ -108,7 +112,7 @@ def test_load_findings_auto_detects(tmp_path):
     p = tmp_path / "insp.json"
     p.write_text(json.dumps(_inspector2_doc()))
     out = load_findings(p)
-    assert [f["id"] for f in out] == ["INSP-001", "INSP-002"]
+    assert [f["id"] for f in out] == ["INSP-001", "INSP-002", "INSP-003"]
 
     n = tmp_path / "native.json"
     n.write_text(json.dumps({"findings": [{"id": "F-9", "cve_id": "CVE-X",
@@ -149,6 +153,19 @@ def test_converted_image_finding_goes_to_review(infra, fixtures_dir):
     findings = inspector2_to_findings(_inspector2_doc())
     nemotron = NemotronClient.from_fixtures(fixtures_dir)
     tavily = TavilyClient.from_fixtures(fixtures_dir)
-    report = run_scan(infra, findings[1:], nemotron, tavily, NarrativeGuard(), None)
+    report = run_scan(infra, findings[1:2], nemotron, tavily, NarrativeGuard(), None)
     assert len(report["needs_review"]) == 1
     assert "not in the infrastructure snapshot" in report["needs_review"][0].reason
+
+
+def test_ghsa_finding_kept_and_goes_to_review(infra, fixtures_dir):
+    # GHSA-only findings are not silently dropped: with no recorded
+    # extraction they fail closed to human review, where an analyst sees them.
+    findings = inspector2_to_findings(_inspector2_doc())
+    nemotron = NemotronClient.from_fixtures(fixtures_dir)
+    tavily = TavilyClient.from_fixtures(fixtures_dir)
+    ghsa = [f for f in findings if f["cve_id"] == "GHSA-xxxx-yyyy"]
+    assert len(ghsa) == 1
+    report = run_scan(infra, ghsa, nemotron, tavily, NarrativeGuard(), None)
+    assert len(report["needs_review"]) == 1
+    assert "OfflineError" in report["needs_review"][0].reason
