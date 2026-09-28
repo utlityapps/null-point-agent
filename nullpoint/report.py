@@ -146,10 +146,12 @@ def cmd_report(args: argparse.Namespace) -> int:
         os.remove(log.path)
     except OSError:
         pass
-    n_act = len(data["actionable"])
     print(f"Wrote {out}")
+    n_act = len(data["actionable"])
+    reduction = (f"{data['raw_alert_count'] / n_act:.0f}x reduction"
+                 if n_act > 0 else "no actionable findings")
     print(f"{data['raw_alert_count']} raw Critical alerts -> {n_act} actionable "
-          f"({data['raw_alert_count'] / max(n_act, 1):.0f}x reduction); "
+          f"({reduction}); "
           f"chain: {data['chain']['msg']}")
     return 0
 

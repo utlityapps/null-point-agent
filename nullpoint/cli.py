@@ -30,6 +30,13 @@ def load_json(path: pathlib.Path) -> dict:
         return json.load(fh)
 
 
+def _reduction_str(raw: int, n_act: int) -> str:
+    # Never print a fake ratio when nothing is actionable.
+    if n_act <= 0:
+        return "no actionable findings"
+    return f"{raw / n_act:.0f}x reduction"
+
+
 def cmd_scan(args: argparse.Namespace) -> int:
     infra_path = pathlib.Path(args.infra) if args.infra else FIXTURES / "infra.json"
     infra = load_json(infra_path)
@@ -88,7 +95,7 @@ def cmd_scan(args: argparse.Namespace) -> int:
     print(f"Tamper-evident dismissal log: {log_path} — {msg}")
     print(f"\nAlert volume: {report['raw_alert_count']} raw Critical alerts -> "
           f"{len(report['actionable'])} actionable "
-          f"({report['raw_alert_count'] / max(len(report['actionable']), 1):.0f}x reduction)")
+          f"({_reduction_str(report['raw_alert_count'], len(report['actionable']))})")
     return 0
 
 

@@ -279,7 +279,7 @@ function renderStats(){
     [DATA.actionable.length, "actionable"],
     [DATA.dismissed.length, "dismissed (zero exposure)"],
     [DATA.needs_review.length, "needs human review"],
-    [g.total + " / " + g.blocked, "guard checks / blocked"],
+    [g.blocked + " of " + g.total, "LLM exposure claims blocked by guard"],
   ];
   document.getElementById("statsBar").innerHTML = items.map(i =>
     '<div class="stat"><div class="n">' + esc(i[0]) + '</div><div class="l">' + esc(i[1]) + '</div></div>'
