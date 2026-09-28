@@ -179,7 +179,7 @@ def test_auth_action_before_forward_is_parsed_and_gapped():
         {"Type": "forward", "TargetGroupArn": "arn:tg1"},
     ]
     lbs, gaps = ai.import_elbv2(bundle)
-    assert lbs[0]["listeners"][0]["targets"] == ["i-app"]
+    assert lbs[0]["listeners"][0]["targets"] == [{"id": "i-app", "port": 8443}]
     assert any(g["code"] == "alb-auth-action" for g in gaps)
 
 
@@ -196,7 +196,8 @@ def test_weighted_forward_parsed_and_gapped():
         ]},
     }]
     lbs, gaps = ai.import_elbv2(bundle)
-    assert sorted(lbs[0]["listeners"][0]["targets"]) == ["i-app", "i-app2"]
+    got = sorted(t["id"] for t in lbs[0]["listeners"][0]["targets"])
+    assert got == ["i-app", "i-app2"]
     assert any(g["code"] == "alb-weighted-forward" for g in gaps)
 
 
@@ -206,7 +207,7 @@ def test_ip_target_resolved_via_private_ip():
         {"TargetGroupArn": "arn:tg1", "Port": 8443, "TargetType": "ip"}]
     bundle["targets"] = {"arn:tg1": [{"Id": "10.0.2.5"}]}
     lbs, gaps = ai.import_elbv2(bundle, {"10.0.2.5": "i-app"})
-    assert lbs[0]["listeners"][0]["targets"] == ["i-app"]
+    assert lbs[0]["listeners"][0]["targets"] == [{"id": "i-app", "port": 8443}]
     assert gaps == []
 
 
@@ -230,7 +231,8 @@ def test_non_default_listener_rules_gapped_and_parsed():
         "Actions": [{"Type": "forward", "TargetGroupArn": "arn:tg2"}],
     }]
     lbs, gaps = ai.import_elbv2(bundle)
-    assert sorted(lbs[0]["listeners"][0]["targets"]) == ["i-api", "i-app"]
+    got = sorted(t["id"] for t in lbs[0]["listeners"][0]["targets"])
+    assert got == ["i-api", "i-app"]
     assert any(g["code"] == "alb-listener-rules" for g in gaps)
 
 

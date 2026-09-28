@@ -170,26 +170,41 @@ def import_internet_gateways(doc: dict) -> list[dict]:
     return out
 
 
+def _target_entry(t: dict) -> tuple[str | None, int | None]:
+    """(id, registered port) from a describe-target-health entry.
+
+    Accepts the bundle shorthand {"Id", "Port"} and the raw API shape
+    {"Target": {"Id", "Port"}}.
+    """
+    target = t.get("Target", t) if isinstance(t.get("Target"), dict) else t
+    port = target.get("Port")
+    return target.get("Id"), (int(port) if port is not None else None)
+
+
 def _forward_targets(tg_arns: list[str], tg_by_arn: dict, targets_by_tg: dict,
-                     ip_to_instance: dict, gaps: list, lb_id: str) -> list[str]:
-    """Resolve target-group ARNs to instance IDs, recording a coverage gap
-    for anything the solver cannot model. Returns the resolved instance IDs."""
-    resolved: list[str] = []
+                     ip_to_instance: dict, gaps: list, lb_id: str) -> list[dict]:
+    """Resolve target-group ARNs to [{"id", "port"}] entries, recording a
+    coverage gap for anything the solver cannot model. "port" is each
+    target's registered port (describe-target-health), falling back to the
+    target group's port when unregistered."""
+    resolved: list[dict] = []
     for tg_arn in tg_arns:
         if not tg_arn:
             continue
         tg = tg_by_arn.get(tg_arn, {})
         ttype = str(tg.get("TargetType", "instance")).lower()
+        tg_port = tg.get("Port")
         for t in targets_by_tg.get(tg_arn, []):
-            tid = t.get("Id")
+            tid, tport = _target_entry(t)
             if not tid:
                 continue
+            port = tport if tport is not None else tg_port
             if ttype == "instance":
-                resolved.append(tid)
+                resolved.append({"id": tid, "port": port})
             elif ttype == "ip":
                 iid = ip_to_instance.get(tid)
                 if iid:
-                    resolved.append(iid)  # parse what we can
+                    resolved.append({"id": iid, "port": port})  # parse what we can
                 else:
                     gaps.append({
                         "code": "alb-target-ip-unresolved", "node": lb_id,
@@ -205,8 +220,8 @@ def _forward_targets(tg_arns: list[str], tg_by_arn: dict, targets_by_tg: dict,
 
 def _parse_actions(actions: list[dict], tg_by_arn: dict, targets_by_tg: dict,
                    ip_to_instance: dict, gaps: list, lb_id: str,
-                   where: str) -> tuple[list[str], str | None]:
-    """Parse ELBv2 actions into (instance targets, first target-group ARN).
+                   where: str) -> tuple[list[dict], str | None]:
+    """Parse ELBv2 actions into ([{"id", "port"}], first target-group ARN).
 
     Iterates ALL actions (the old code read only DefaultActions[0], so an
     auth action first silently dropped the forward). Auth actions are
@@ -242,7 +257,7 @@ def _parse_actions(actions: list[dict], tg_by_arn: dict, targets_by_tg: dict,
 
 def _parse_listener(actions: list[dict], tg_by_arn: dict, targets_by_tg: dict,
                     ip_to_instance: dict, gaps: list, lb_id: str,
-                    where: str) -> tuple[list[str], str | None]:
+                    where: str) -> tuple[list[dict], str | None]:
     """Parse one listener's (or rule's) actions; see _parse_actions."""
     return _parse_actions(actions, tg_by_arn, targets_by_tg,
                           ip_to_instance, gaps, lb_id, where)
@@ -301,13 +316,17 @@ def import_elbv2(bundle: dict, ip_to_instance: dict | None = None
                               "routing conditions unevaluated",
                 })
             tport = tg_by_arn.get(first_tg, {}).get("Port") if first_tg else None
+            # Dedupe by instance ID, keeping each target's registered port.
+            seen: dict[str, dict] = {}
+            for entry in targets:
+                seen.setdefault(entry["id"], entry)
             listeners.append({
                 "port": lst["Port"],
                 "protocol": str(lst.get("Protocol", "TCP")).upper(),
                 "target_port": tport or lst["Port"],
-                "targets": sorted(set(targets)),
+                "targets": list(seen.values()),
             })
-            lb_targets.update(targets)
+            lb_targets.update(seen)
         # Scope this LB's gaps to every instance it forwards to. If forwarding
         # is entirely unresolvable (e.g. all IP targets unmatched), fall back
         # to VPC-wide scoping via the caller (see build_infra).
@@ -325,6 +344,8 @@ def import_elbv2(bundle: dict, ip_to_instance: dict | None = None
 
 
 COLLECTOR = """\
+# Preferred: scripts/collect_aws.sh gathers everything below plus the ELBv2
+# bundle and Classic ELB inventory into one directory.
 aws ec2 describe-security-groups    > sgs.json
 aws ec2 describe-network-acls      > nacls.json
 aws ec2 describe-route-tables      > rtbs.json
@@ -335,8 +356,49 @@ aws ec2 describe-internet-gateways > igws.json
 # ELBv2 (optional): assemble {"load_balancers","listeners","target_groups",
 # "targets","rules"} from describe-load-balancers / describe-listeners /
 # describe-target-groups / describe-target-health / describe-rules, then pass
-# it with --elbv2.
+# it with --elbv2. Without it, a VPC-wide coverage gap is recorded: the
+# importer will not assume an account has no load balancers.
+# Classic ELB (optional): aws elb describe-load-balancers > elb.json, passed
+# with --elb. Classic LBs are not modeled; any found become a coverage gap.
 """
+
+
+def _all_instance_ids(infra: dict) -> list[str]:
+    return sorted({i["id"] for i in infra["instances"]})
+
+
+def _missing_inventory_gaps(infra: dict, files: dict) -> list[dict]:
+    """Missing load-balancer inventory is a coverage gap, not an assumption
+    of 'no load balancers'. Any LB in the account that the model cannot see
+    could expose a private host, so every instance in the snapshot fails
+    closed to review on dismissal paths. Providing the inputs (even empty)
+    proves the inventory is complete and clears the gap — which is exactly
+    what scripts/collect_aws.sh does."""
+    gaps = []
+    if not files.get("elbv2"):
+        gaps.append({
+            "code": "load-balancer-inventory-missing", "node": "account",
+            "affects": _all_instance_ids(infra),
+            "detail": "no ELBv2 data provided (--elbv2); load balancers in "
+                      "the account are not modeled",
+        })
+    if files.get("elb"):
+        classic = _load(files["elb"]).get("LoadBalancerDescriptions", [])
+        if classic:
+            gaps.append({
+                "code": "classic-elb-unmodeled", "node": "account",
+                "affects": _all_instance_ids(infra),
+                "detail": f"{len(classic)} Classic load balancer(s) exist "
+                          "and are not modeled",
+            })
+    else:
+        gaps.append({
+            "code": "classic-elb-inventory-missing", "node": "account",
+            "affects": _all_instance_ids(infra),
+            "detail": "no Classic ELB data provided (--elb); Classic load "
+                      "balancers in the account are not modeled",
+        })
+    return gaps
 
 
 def _ipv6_route_gaps(infra: dict) -> list[dict]:
@@ -402,6 +464,8 @@ def build_infra(files: dict) -> dict:
                             set(g.get("affects", [])) | set(insts_by_vpc.get(vpc, [])))
     _apply_main_route_tables(infra)
     infra["coverage_gaps"].extend(_ipv6_route_gaps(infra))
+    # Missing load-balancer inventory is a gap, not an assumption of none.
+    infra["coverage_gaps"].extend(_missing_inventory_gaps(infra, files))
     return infra
 
 
@@ -437,6 +501,10 @@ def main() -> None:
     ap.add_argument("--igws", required=True)
     ap.add_argument("--elbv2", default=None,
                     help="optional ELBv2 bundle JSON (see module docstring)")
+    ap.add_argument("--elb", default=None,
+                    help="optional Classic ELB describe-load-balancers JSON; "
+                         "Classic LBs are not modeled, so any found become a "
+                         "coverage gap (use scripts/collect_aws.sh)")
     ap.add_argument("-o", "--output", required=True)
     ap.add_argument("--print-collector", action="store_true")
     args = ap.parse_args()
@@ -444,7 +512,8 @@ def main() -> None:
         print(COLLECTOR)
         return
     files = {k: getattr(args, k) for k in
-             ("sgs", "nacls", "rtbs", "instances", "subnets", "vpcs", "igws", "elbv2")}
+             ("sgs", "nacls", "rtbs", "instances", "subnets", "vpcs", "igws",
+              "elbv2", "elb")}
     infra = build_infra(files)
     with open(args.output, "w") as fh:
         json.dump(infra, fh, indent=1)

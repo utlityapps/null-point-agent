@@ -110,6 +110,31 @@ class InfraGraph:
         """Coverage gaps affecting ``host`` (empty when the model is complete)."""
         return [g for g in self.coverage_gaps if host in g.get("affects", [])]
 
+    @staticmethod
+    def _target_entries(lst: dict):
+        """Yield (target_id, registered_port) for a listener's targets.
+
+        Two shapes are accepted: plain instance-ID strings (fixtures,
+        hand-written infra) and {"id", "port"} dicts (importer output,
+        where "port" is the target's registered port from
+        describe-target-health).
+        """
+        for t in lst.get("targets", []):
+            if isinstance(t, dict):
+                yield t.get("id"), t.get("port")
+            else:
+                yield t, None
+
+    @staticmethod
+    def _listener_target_port(lst: dict, target_id: str):
+        """The port a listener forwards to ``target_id``: the target's
+        registered port when known, else the listener's target port."""
+        fallback = lst.get("target_port", lst["port"])
+        for tid, tport in InfraGraph._target_entries(lst):
+            if tid == target_id:
+                return tport if tport is not None else fallback
+        return fallback
+
     # ------------------------------------------------------------------
     # topology construction
     # ------------------------------------------------------------------
@@ -131,13 +156,14 @@ class InfraGraph:
 
         for alb_id, alb in self.albs.items():
             for lst in alb.get("listeners", []):
-                for tgt in lst.get("targets", []):
+                for tgt_id, tgt_port in self._target_entries(lst):
                     self.G.add_edge(
                         alb_id,
-                        tgt,
+                        tgt_id,
                         kind="forward",
                         listener_port=lst["port"],
-                        target_port=lst.get("target_port", lst["port"]),
+                        target_port=(tgt_port if tgt_port is not None
+                                     else lst.get("target_port", lst["port"])),
                         protocol=lst.get("protocol", "TCP"),
                     )
 
@@ -231,8 +257,8 @@ class InfraGraph:
     def _find_listener(self, alb: dict, next_node: str, port: int, protocol: str):
         for lst in alb.get("listeners", []):
             if (
-                lst.get("target_port", lst["port"]) == port
-                and next_node in lst.get("targets", [])
+                self._listener_target_port(lst, next_node) == port
+                and any(tid == next_node for tid, _ in self._target_entries(lst))
                 and proto_match(lst.get("protocol", "TCP"), protocol)
             ):
                 return lst
@@ -262,7 +288,10 @@ class InfraGraph:
                     })
                     return False, hops
                 lport = listener["port"]
-                if not self.sg_allows(alb.get("security_groups"), [src_cidr], None, lport, protocol):
+                # NLBs have no security groups: nothing to check at the LB.
+                # (ALB/CLB SGs are evaluated when present.)
+                alb_sgs = alb.get("security_groups") or []
+                if alb_sgs and not self.sg_allows(alb_sgs, [src_cidr], None, lport, protocol):
                     hops.append({"hop": f"{a} -> {b}", "decision": "deny",
                                  "reason": f"{b} security groups deny {src_cidr} on listener port {lport}"})
                     return False, hops
@@ -331,7 +360,8 @@ class InfraGraph:
         for alb_id, alb in self.albs.items():
             listener = None
             for lst in alb.get("listeners", []):
-                if lst.get("target_port", lst["port"]) == port and host in lst.get("targets", []):
+                if (self._listener_target_port(lst, host) == port
+                        and any(tid == host for tid, _ in self._target_entries(lst))):
                     listener = lst
                     break
             if listener is None:
