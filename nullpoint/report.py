@@ -49,9 +49,9 @@ def load_json(path: pathlib.Path):
         return json.load(fh)
 
 
-def run_offline_scan() -> tuple[dict, DismissalLog, list[dict], list[dict]]:
+def run_offline_scan(infra_path=None) -> tuple[dict, DismissalLog, list[dict], list[dict]]:
     """Run the full pipeline on recorded fixtures; return (report, log, entries, findings)."""
-    infra = load_json(FIXTURES / "infra.json")
+    infra = load_json(pathlib.Path(infra_path) if infra_path else FIXTURES / "infra.json")
     findings = load_json(FIXTURES / "cves.json")["findings"]
     nemotron = NemotronClient.from_fixtures(str(FIXTURES), offline=True)
     tavily = TavilyClient.from_fixtures(str(FIXTURES), offline=True)
@@ -137,7 +137,7 @@ def build_html(data: dict) -> str:
 
 
 def cmd_report(args: argparse.Namespace) -> int:
-    report, log, entries, findings = run_offline_scan()
+    report, log, entries, findings = run_offline_scan(args.infra)
     data = assemble_data(report, log, entries, findings)
     out = pathlib.Path(args.out or str(REPO_ROOT / "nullpoint-report.html"))
     out.write_text(build_html(data), encoding="utf-8")
@@ -162,6 +162,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--offline", action="store_true",
                         help="Run from recorded fixtures (the only supported mode).")
     parser.add_argument("--out", default=None, help="Output HTML path.")
+    parser.add_argument("--infra", default=None,
+                        help="Path to infra.json (default: fixtures/infra.json).")
     return cmd_report(parser.parse_args(argv))
 
 

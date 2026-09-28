@@ -20,7 +20,7 @@ from nullpoint.nemotron import EXTRACTION_SYSTEM_PROMPT
 MODEL = "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B"
 CHAT = "/home/hatch/workspace/skills/nebius-token-factory/bin/nebius-chat"
 REQUIRED = ("port", "protocol", "auth_required", "network_vector",
-            "payload_constraints", "confidence", "narrative_claim")
+            "payload_constraints", "confidence", "narrative_claim", "delivery")
 
 
 def extract(cve_id: str, description: str) -> dict:

@@ -15,6 +15,11 @@ class Preconditions:
     payload_constraints: str = ""
     confidence: float = 0.0
     narrative_claim: str = "unknown"  # what the LLM *says* about exposure
+    delivery: str = "unknown"  # "direct" | "data_plane" | "unknown"
+    # direct: attacker opens a network connection to the service port.
+    # data_plane: payload arrives indirectly (logs, headers, queues) — the
+    #   reachability solver cannot falsify these; they go to human review.
+    # unknown: advisory doesn't say — treated as data_plane (fail closed).
 
 
 @dataclass

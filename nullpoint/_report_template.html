@@ -206,7 +206,7 @@ a{color:var(--blue)}
   Hypotheses: H1 (majority of Criticals unreachable) <span class="chainok">supported offline</span>;
   H2 (solver matches hand review) <span class="chainok">supported offline</span>;
   H4 (&ge;10x alert reduction) <span class="chainok">supported offline</span>;
-  H3 (Nemotron extraction accuracy) deferred to a live Nebius run &mdash; see <code>HYPOTHESES.md</code>.</p>
+  H3 (Nemotron extraction accuracy): 20/20 exact-match on a live Nebius run (2026-09-23) &mdash; see <code>HYPOTHESES.md</code>.</p>
   <p>Honest limits: the hash-chained dismissal log detects edits, reordering and
   non-tail deletion, but not tail truncation (anchor the latest hash externally in production);
   NACL stateless return paths use the realistic egress-allow-all default. Full notes in the repo.</p>
@@ -249,7 +249,7 @@ function renderRefusal(){
       ' on <code>' + esc(v.host) + ':' + esc(v.port) + '</code> &mdash; patch immediately.</div>';
   });
   document.getElementById("beforeAlerts").innerHTML = bh;
-  // AFTER: the refusal moment, anchored on F-001 (Log4j-style, internal cluster).
+  // AFTER: the refusal moment, anchored on F-001 (pre-auth RCE, internal cluster).
   const f = byId["F-001"] || DATA.verdicts.find(v => v.decision === "dismissed");
   const q = DATA.actionable.map(id => byId[id]).filter(Boolean);
   let ah = "";
@@ -314,19 +314,21 @@ function renderTrace(fid){
   const x = v.exploitability || {};
   const proposes =
     '<div class="card proposes"><h3>1 &middot; Model proposes (Nemotron)</h3>' +
-    '<p class="guardnote" style="margin-top:0">Recorded stub response in offline mode; ' +
+    '<p class="guardnote" style="margin-top:0">Recorded Nemotron response in offline mode; ' +
     'live mode calls NVIDIA Nemotron via Nebius Token Factory.</p>' +
     '<dl class="kv">' +
     '<dt>target port</dt><dd>' + esc(p.port) + ' / ' + esc(p.protocol) + '</dd>' +
     '<dt>auth required</dt><dd>' + boolTxt(p.auth_required) + '</dd>' +
     '<dt>network vector</dt><dd>' + esc(p.network_vector) + '</dd>' +
+    '<dt>payload delivery</dt><dd>' + esc(p.delivery || 'unknown') + '</dd>' +
     '<dt>payload constraints</dt><dd>' + esc(p.payload_constraints) + '</dd>' +
     '<dt>extraction confidence</dt><dd>' + esc(p.confidence) + '</dd>' +
     '<dt>LLM narrative claim</dt><dd>' + esc(p.narrative_claim) + '</dd>' +
     '</dl>' +
     '<div class="badges">' + intelPills(x) + '</div>' +
     '<p class="guardnote">Threat intel via Tavily &mdash; enrichment only, ' +
-    'never touches the verdict.</p>' +
+    'never touches the verdict. Recorded response in offline mode; ' +
+    'live mode calls the Tavily API.</p>' +
     (x.summary ? '<p class="guardnote">' + esc(x.summary) + '</p>' : '') +
     '</div>';
   const proves =

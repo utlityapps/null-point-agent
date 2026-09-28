@@ -44,7 +44,9 @@ def import_security_groups(doc: dict) -> list[dict]:
                 fp = perm.get("FromPort")
                 tp = perm.get("ToPort")
                 if proto == "-1":
-                    fp, tp = 0, 0
+                    # "All traffic": no port restriction. The solver treats
+                    # None as unrestricted; 0/0 would wrongly match nothing.
+                    fp, tp = None, None
                 base = {"protocol": proto, "from_port": fp, "to_port": tp}
                 cidrs = [r["CidrIp"] for r in perm.get("IpRanges", []) if r.get("CidrIp")]
                 cidrs += [r["CidrIpv6"] for r in perm.get("Ipv6Ranges", []) if r.get("CidrIpv6")]
@@ -93,9 +95,17 @@ def import_route_tables(doc: dict) -> list[dict]:
                 or route.get("DestinationIpv6CidrBlock"),
                 "target": target,
             })
+        is_main = False
         for assoc in rtb.get("Associations", []):
             if assoc.get("SubnetId"):
                 item["subnet_ids"].append(assoc["SubnetId"])
+            elif assoc.get("Main"):
+                # The VPC's main route table: every subnet without an
+                # explicit association uses it (the default-VPC case).
+                is_main = True
+        if is_main:
+            item["main"] = True
+            item["vpc"] = rtb.get("VpcId")
         out.append(item)
     return out
 
@@ -222,7 +232,29 @@ def build_infra(files: dict) -> dict:
     }
     if files.get("elbv2"):
         infra["load_balancers"] = import_elbv2(_load(files["elbv2"]))
+    _apply_main_route_tables(infra)
     return infra
+
+
+def _apply_main_route_tables(infra: dict) -> None:
+    """Subnets without an explicit route-table association use their VPC's
+    main route table (AWS default). Without this, every default-VPC subnet
+    reads as having no IGW route."""
+    main_by_vpc = {r["vpc"]: r["id"] for r in infra["route_tables"]
+                   if r.get("main") and r.get("vpc")}
+    claimed = {sid for r in infra["route_tables"] for sid in r["subnet_ids"]}
+    vpc_by_subnet = {s["id"]: s.get("vpc") for s in infra["subnets"]}
+    for rtb in infra["route_tables"]:
+        if not rtb.get("main"):
+            continue
+        for sid, vpc in vpc_by_subnet.items():
+            if sid not in claimed and vpc == rtb.get("vpc"):
+                rtb["subnet_ids"].append(sid)
+                claimed.add(sid)
+    # 'main'/'vpc' are importer bookkeeping; the solver doesn't need them.
+    for rtb in infra["route_tables"]:
+        rtb.pop("main", None)
+        rtb.pop("vpc", None)
 
 
 def main() -> None:

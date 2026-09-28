@@ -37,17 +37,35 @@ Respond with JSON only, exactly this shape:
   "network_vector": "NETWORK" | "ADJACENT" | "LOCAL",
   "payload_constraints": "<one sentence>",
   "confidence": <0.0-1.0>,
-  "narrative_claim": "exposed" | "isolated" | "unknown"
+  "narrative_claim": "exposed" | "isolated" | "unknown",
+  "delivery": "direct" | "data_plane" | "unknown"
 }
 "narrative_claim" is your best guess at whether the vulnerable service is
 exposed to untrusted networks, based on the advisory text alone. It is a
 guess: the deterministic solver verifies it and the narrative guard blocks
 it if it disagrees.
+"delivery" is how the exploit payload reaches the vulnerable service:
+"direct" means the attacker opens a network connection to the service port
+(crafted TCP/UDP packet, request to the service itself); "data_plane" means
+the payload arrives indirectly via application data — log messages, HTTP
+headers, message queues (e.g. Log4Shell-style JNDI strings in logged data);
+"unknown" if the advisory does not say. When in doubt, answer "data_plane"
+or "unknown": a wrong "direct" can cause a missed exposure, while the other
+direction only costs a human review.
 """
 
 
 class OfflineError(RuntimeError):
     """Raised when offline mode has no recorded response for a CVE."""
+
+
+_DELIVERIES = ("direct", "data_plane", "unknown")
+
+
+def _clean_delivery(value: object) -> str:
+    """Fail closed: anything but an explicit 'direct' routes to review."""
+    v = str(value or "unknown").strip().lower()
+    return v if v in _DELIVERIES else "unknown"
 
 
 class NemotronClient:
@@ -88,6 +106,7 @@ class NemotronClient:
             payload_constraints=str(data.get("payload_constraints", "")),
             confidence=float(data.get("confidence", 0.0)),
             narrative_claim=str(data.get("narrative_claim", "unknown")),
+            delivery=_clean_delivery(data.get("delivery")),
         )
 
     def _call_live(self, cve_id: str, cve_text: str) -> dict:

@@ -31,7 +31,8 @@ def load_json(path: pathlib.Path) -> dict:
 
 
 def cmd_scan(args: argparse.Namespace) -> int:
-    infra = load_json(FIXTURES / "infra.json")
+    infra_path = pathlib.Path(args.infra) if args.infra else FIXTURES / "infra.json"
+    infra = load_json(infra_path)
     findings = load_json(FIXTURES / "cves.json")["findings"]
 
     live_nemotron = bool(args.live and os.environ.get("NEBIUS_API_KEY"))
@@ -52,7 +53,7 @@ def cmd_scan(args: argparse.Namespace) -> int:
 
     report = run_scan(infra, findings, nemotron, tavily, guard, dismissal_log)
 
-    # The refusal moment: the Log4j-style finding on the internal cluster.
+    # The refusal moment: the pre-auth RCE finding on the internal cluster.
     for v in report["verdicts"]:
         if v.finding_id == "F-001":
             print("─" * 64)
@@ -77,7 +78,7 @@ def cmd_scan(args: argparse.Namespace) -> int:
         print(f"  - [{v.finding_id}] {v.cve_id} on {v.host}:{v.port} — {v.reason[:100]}")
 
     if report["needs_review"]:
-        print("\nNEEDS HUMAN REVIEW (narrative guard fired):")
+        print("\nNEEDS HUMAN REVIEW (payload delivery not falsifiable by network proof):")
         for v in report["needs_review"]:
             print(f"  ? [{v.finding_id}] {v.reason}")
 
@@ -99,6 +100,9 @@ def main(argv: list[str] | None = None) -> int:
     scan.add_argument("--live", action="store_true", help="Use live Nebius/Tavily APIs (requires API keys).")
     scan.add_argument("--log-path", default=None, help="Where to write dismissals.jsonl.")
     scan.add_argument("--fresh-log", action="store_true", help="Start a new dismissal log chain.")
+    scan.add_argument("--infra", default=None,
+                      help="Path to infra.json (default: fixtures/infra.json). "
+                           "Use the AWS importer's output to scan real infrastructure.")
     args = parser.parse_args(argv)
     if args.command == "scan":
         return cmd_scan(args)

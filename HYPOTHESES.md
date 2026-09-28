@@ -86,5 +86,35 @@ reachable) the old routing would have *delayed a real ticket*.
 the solver's verdict stands (`scanner.py`; `tests/test_guard.py`).
 Retracted: scanner docstring step 4 (old wording).
 
+### K2 — Data-plane check should run before the reachability check (2026-09-28)
+
+**Claim:** route data-plane payloads to review first, then check reachability.
+
+**Evidence against:** an internet-facing gateway with a Log4Shell-style
+payload landed in "needs review" instead of the action queue — the same
+delayed-ticket failure K1 describes, in the other direction. A network
+proof that exposure *exists* outranks payload routing: if the solver proves
+reachability, the finding is actionable regardless of how the payload
+arrives. The data-plane rule exists only for the case the solver *cannot*
+decide (no network path found but indirect delivery unfalsified).
+
+**What changed:** reachable branch now runs first in `scanner.py`;
+`test_reachable_outranks_data_plane_routing` pins it.
+
+### K3 — Keyword matching is sufficient for payload routing (2026-09-28)
+
+**Claim:** detecting log/header/queue hints in `payload_constraints` text is
+enough to route data-plane payloads to review.
+
+**Evidence against:** keyword lists miss phrasings the author didn't predict
+(e.g. "${jndi:ldap://…} in the User-Agent header" contains none of the
+hints), and every miss is a wrongful dismissal of an unreachable host —
+fail-open. External review (2026-09-28) demonstrated the gap.
+
+**What changed:** replaced with a structured `delivery` field
+(direct | data_plane | unknown) in the extraction; the model makes the
+judgment call, anything but an explicit "direct" fails closed to review
+(`nemotron.py`, `models.py`, `scanner.py`; re-recorded 2026-09-28).
+
 None other yet. This section is append-only: when a hypothesis fails, record the
 numbers, what we learned, and what changed — retracted claims stay visible.

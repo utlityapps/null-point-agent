@@ -9,13 +9,16 @@ Hackathon** (Best Apps & Agents track). Instead of dumping hundreds of
 "Critical" alerts on DevOps teams, it:
 
 1. **Model proposes** — NVIDIA Nemotron (via Nebius Token Factory) extracts
-   structured exploit preconditions (port, protocol, auth, payload) from CVE
-   advisories.
+   structured exploit preconditions (port, protocol, auth, payload, and
+   *payload delivery*: direct vs data-plane vs unknown) from CVE advisories.
 2. **Code proves** — a deterministic NetworkX graph engine evaluates AWS
    security groups, NACLs, route tables, load balancers, and transit
    gateways to compute *boolean* reachability from untrusted networks.
-3. **Product decides** — reachable findings go to a ranked action queue;
-   unreachable ones are dismissed into a tamper-evident, hash-chained log.
+3. **Product decides** — reachable findings go to a ranked action queue
+   (proven exposure outranks payload routing); unreachable findings with a
+   direct payload are dismissed into a tamper-evident, hash-chained log;
+   unreachable findings with data-plane/unknown delivery go to human
+   review — a network proof cannot falsify them.
 
 A fail-closed **narrative guard** blocks any LLM exposure claim the solver
 disagrees with. The solver always wins: a blocked claim is logged as a
@@ -104,6 +107,13 @@ Instance services (which ports the solver tests) come from an optional
 ELBv2 load balancers are supported via an optional `--elbv2` bundle —
 see `python -m nullpoint.aws_import --help`.
 
+Scan the imported infrastructure directly:
+
+```bash
+python -m nullpoint.cli scan --offline --infra infra.json
+python -m nullpoint.report --offline --infra infra.json
+```
+
 ## Layout
 
 ```
@@ -122,7 +132,7 @@ nullpoint/
 fixtures/
   infra.json        synthetic AWS infra (internal cluster + edge gateway)
   cves.json         11 synthetic Critical findings
-  recorded/         stubbed Nemotron + Tavily responses (offline mode)
+  recorded/         recorded Nemotron + Tavily responses (offline mode)
 tests/              pytest suite (reachability, guard, offline, reduction)
 HYPOTHESES.md       falsifiable hypotheses + status
 ```
@@ -131,7 +141,7 @@ HYPOTHESES.md       falsifiable hypotheses + status
 
 - Dual-surface UI: done (`python -m nullpoint.report --offline`).
 - Nebius live run: done — H3 scored 20/20 live on 2026-09-23.
-- Tavily live: pending API key (optional enrichment; offline stubs cover the demo).
+- Tavily live: verified 2026-09-27 (one-time key, since rotated); offline recordings cover the demo.
 - Remaining: ≤3-min demo video, Devpost submission.
 - See `HYPOTHESES.md` for what is proven offline vs deferred to live runs.
 

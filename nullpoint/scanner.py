@@ -10,11 +10,14 @@ Pipeline per finding:
    the solver. The solver always wins: a blocked claim is logged as a caught
    model error, but it never overrides the solver's verdict — a blocked
    claim is never silently acted on, and never vetoes a proof.
-5. Data-plane payloads (log/header/queue-borne) cannot be falsified by a
-   network reachability proof, so they route to human review, never to
-   "dismissed".
-6. Reachable  -> "actionable" (ranked queue).
-   Unreachable -> "dismissed" (tamper-evident dismissal log entry).
+5. Reachable  -> "actionable" (ranked queue). Proven exposure outranks
+   payload routing: a reachable finding is queued even for data-plane
+   payloads.
+   Unreachable + data-plane/unknown delivery -> "needs-review". A network
+   proof cannot falsify data-plane delivery, so fail closed to a human,
+   never to "dismissed".
+   Unreachable + direct delivery -> "dismissed" (tamper-evident dismissal
+   log entry).
 """
 from __future__ import annotations
 
@@ -26,26 +29,11 @@ from .nemotron import NemotronClient
 from .tavily import TavilyClient
 
 
-# Payload hints that the exploit travels via the data plane (log pipeline,
-# HTTP headers, message queues) rather than a direct network connection.
-# The reachability solver only models L3/L4 network paths, so it cannot
-# prove non-exposure for these — e.g. Log4Shell reached internal systems
-# through logged JNDI strings, not through direct connections. Findings
-# with data-plane payloads route to human review, never to "dismissed".
-_DATA_PLANE_HINTS = (
-    "log message",
-    "header value",
-    "message queue",
-    "log pipeline",
-    "syslog",
-    "jndi lookup",
-)
-
-
-def payload_via_data_plane(payload_constraints: str | None) -> bool:
-    """True when the exploit payload travels via the data plane."""
-    pc = (payload_constraints or "").lower()
-    return any(h in pc for h in _DATA_PLANE_HINTS)
+# Payload delivery comes from the extraction as a structured field
+# ("direct" | "data_plane" | "unknown"), not keyword matching: the model
+# makes the judgment call, and anything but an explicit "direct" fails
+# closed to human review. A network reachability proof cannot falsify
+# data-plane delivery (cf. Log4Shell via log pipelines).
 
 
 def run_scan(
@@ -84,22 +72,29 @@ def run_scan(
                 "protocol": pre.protocol,
                 "auth_required": pre.auth_required,
                 "network_vector": pre.network_vector,
+                "delivery": pre.delivery,
                 "payload_constraints": pre.payload_constraints,
                 "confidence": pre.confidence,
                 "narrative_claim": pre.narrative_claim,
             },
         )
-        if payload_via_data_plane(pre.payload_constraints):
-            verdict.decision = "needs-review"
-            verdict.reason = (
-                "payload travels via data plane (log/header/queue); "
-                "network reachability proof cannot establish non-exposure"
-            )
-        elif reachable:
+        if reachable:
             verdict.decision = "actionable"
             verdict.reason = (
                 f"solver proves {host}:{pre.port}/{pre.protocol} reachable from {source}; "
                 f"KEV-listed={intel.get('kev_listed')}, weaponized={intel.get('weaponized')}"
+            )
+        elif pre.delivery != "direct":
+            # The solver found no network path, but the payload may arrive
+            # via the data plane (logs, headers, queues) — a network proof
+            # cannot establish non-exposure, so fail closed to human review,
+            # never to "dismissed". (Reachable findings are already queued
+            # above: proven exposure outranks payload routing.)
+            verdict.decision = "needs-review"
+            verdict.reason = (
+                f"payload delivery is {pre.delivery!r}, not a direct network "
+                "connection; network reachability proof cannot establish "
+                "non-exposure"
             )
         else:
             verdict.decision = "dismissed"
@@ -109,8 +104,8 @@ def run_scan(
             # as a caught model error, but it never overrides the solver's
             # verdict — neither to suppress a real ticket nor to veto a proof.
             verdict.reason += (
-                f" | narrative guard blocked LLM claim ({guard_reason}); "
-                "solver's verdict stands"
+                f" Guard: blocked the LLM's {pre.narrative_claim!r} exposure claim "
+                f"({guard_reason}); the solver's verdict stands."
             )
         if verdict.decision == "dismissed" and dismissal_log is not None:
             dismissal_log.append({

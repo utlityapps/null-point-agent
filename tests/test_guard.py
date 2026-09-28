@@ -49,8 +49,8 @@ def test_guard_logs_every_check():
 import json
 
 from nullpoint.dismissal_log import DismissalLog
-from nullpoint.nemotron import NemotronClient
-from nullpoint.scanner import payload_via_data_plane, run_scan
+from nullpoint.nemotron import NemotronClient, _clean_delivery
+from nullpoint.scanner import run_scan
 from nullpoint.tavily import TavilyClient
 
 
@@ -62,6 +62,11 @@ def _clients(fixtures_dir):
 def _with_claim(nemotron, cve_id, claim):
     nemotron.stub_responses[cve_id] = dict(
         nemotron.stub_responses[cve_id], narrative_claim=claim)
+
+
+def _with_delivery(nemotron, cve_id, delivery):
+    nemotron.stub_responses[cve_id] = dict(
+        nemotron.stub_responses[cve_id], delivery=delivery)
 
 
 def test_blocked_exposed_claim_keeps_solver_dismissal(
@@ -99,25 +104,46 @@ def test_blocked_isolated_claim_keeps_solver_actionable(
 
 def test_data_plane_payload_routes_to_review(
         infra, findings, fixtures_dir):
-    # A log/header-borne payload cannot be falsified by a network proof,
+    # A data-plane payload cannot be falsified by a network proof,
     # even when the solver finds no path — cf. Log4Shell via log pipelines.
     findings = json.loads(json.dumps(findings))
     nemotron, tavily = _clients(fixtures_dir)
-    nemotron.stub_responses["CVE-2026-42424"] = dict(
-        nemotron.stub_responses["CVE-2026-42424"],
-        payload_constraints=("Unauthenticated HTTP GET with a crafted JNDI "
-                             "lookup string in a header value."),
-    )
+    _with_delivery(nemotron, "CVE-2026-42424", "data_plane")
     report = run_scan(infra, findings, nemotron, tavily, NarrativeGuard(), None)
     v = next(x for x in report["verdicts"] if x.finding_id == "F-001")
     assert v.decision == "needs-review"
-    assert "data plane" in v.reason
+    assert "data_plane" in v.reason
 
 
-def test_payload_via_data_plane_detector():
-    assert payload_via_data_plane("RCE via crafted log message") is True
-    assert payload_via_data_plane("JNDI lookup string in a header value") is True
-    assert payload_via_data_plane("payload delivered over the message queue") is True
-    assert payload_via_data_plane("Unauthenticated TCP with a crafted query packet") is False
-    assert payload_via_data_plane("") is False
-    assert payload_via_data_plane(None) is False
+def test_unknown_delivery_fails_closed_to_review(
+        infra, findings, fixtures_dir):
+    # The advisory doesn't say how the payload arrives -> review, never dismissed.
+    findings = json.loads(json.dumps(findings))
+    nemotron, tavily = _clients(fixtures_dir)
+    _with_delivery(nemotron, "CVE-2026-42424", "unknown")
+    report = run_scan(infra, findings, nemotron, tavily, NarrativeGuard(), None)
+    v = next(x for x in report["verdicts"] if x.finding_id == "F-001")
+    assert v.decision == "needs-review"
+
+
+def test_reachable_outranks_data_plane_routing(
+        infra, findings, fixtures_dir):
+    # Regression: the reachable branch runs BEFORE the data-plane check.
+    # Proven exposure goes to the action queue even for data-plane payloads;
+    # delaying a reachable ticket to "needs review" is a fail-open.
+    findings = json.loads(json.dumps(findings))
+    nemotron, tavily = _clients(fixtures_dir)
+    _with_delivery(nemotron, "CVE-2026-31007", "data_plane")
+    report = run_scan(infra, findings, nemotron, tavily, NarrativeGuard(), None)
+    v = next(x for x in report["verdicts"] if x.finding_id == "F-011")
+    assert v.decision == "actionable"
+
+
+def test_delivery_cleaning_fails_closed():
+    assert _clean_delivery("direct") == "direct"
+    assert _clean_delivery("data_plane") == "data_plane"
+    assert _clean_delivery("unknown") == "unknown"
+    assert _clean_delivery("") == "unknown"
+    assert _clean_delivery(None) == "unknown"
+    assert _clean_delivery("DIRECT ") == "direct"
+    assert _clean_delivery("side-channel") == "unknown"  # not a known value
